@@ -36,6 +36,7 @@ type KeyMap struct {
 	ShrinkSidebar   key.Binding
 	ToggleSidebar   key.Binding
 	ToggleStatusBar key.Binding
+	EnterCopyMode   key.Binding
 }
 
 // NewKeyMap builds a KeyMap from the user's Keybindings config.
@@ -145,6 +146,10 @@ func NewKeyMap(kb config.Keybindings) KeyMap {
 			key.WithKeys(kb.ToggleStatusBar...),
 			key.WithHelp(join(kb.ToggleStatusBar), "toggle monitor"),
 		),
+		EnterCopyMode: key.NewBinding(
+			key.WithKeys(kb.EnterCopyMode...),
+			key.WithHelp(join(kb.EnterCopyMode), "copy mode"),
+		),
 	}
 }
 
@@ -175,7 +180,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.SplitHorizontal, k.SplitVertical, k.ClosePane},
 		{k.FocusPaneLeft, k.FocusPaneRight, k.FocusPaneUp, k.FocusPaneDown},
 		{k.GrowPaneH, k.ShrinkPaneH, k.GrowSidebar, k.ShrinkSidebar},
-		{k.ToggleSidebar, k.ToggleStatusBar},
+		{k.ToggleSidebar, k.ToggleStatusBar, k.EnterCopyMode},
 		{k.Save, k.Quit, k.Help},
 	}
 }

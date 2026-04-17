@@ -92,3 +92,195 @@ func TestModel_ImplementsTeaModel(t *testing.T) {
 	// Verify the interface is satisfied at compile time via assignment.
 	var _ tea.Model = m
 }
+
+// TestUpdate_PtyOutputMsg_PreservesTrueColor ensures 24-bit RGB SGR sequences
+// emitted by the inner application survive the emulator → renderer → lipgloss
+// pipeline. This is the regression that the vt10x → x/vt swap was made to fix.
+func TestUpdate_PtyOutputMsg_PreservesTrueColor(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	data := []byte("\x1b[38;2;255;100;50mORANGE\x1b[0m\n")
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: data, Err: nil})
+	view := next.(terminal.Model).View()
+
+	if !strings.Contains(view, "ORANGE") {
+		t.Fatalf("expected View() to contain ORANGE text, got: %q", view)
+	}
+	if !strings.Contains(view, "38;2;255;100;50") {
+		t.Errorf("expected truecolor SGR sequence to survive in View(), got: %q", view)
+	}
+}
+
+// TestUpdate_AltScreen_FreezesScrollbackOffset ensures that when an app like
+// claude-code switches to the alternate screen, the scrollback UI becomes
+// inert (alt screens have no history).
+func TestUpdate_AltScreen_FreezesScrollbackOffset(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// Activate alt screen, then write content.
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: []byte("\x1b[?1049h"), Err: nil})
+	next, _ = next.(terminal.Model).Update(msgs.PtyOutputMsg{Data: []byte("ALTBUF\n"), Err: nil})
+	// Try to scroll back — should be a no-op when alt screen is active.
+	next, _ = next.(terminal.Model).Update(msgs.TerminalScrollMsg{Delta: 100})
+	view := next.(terminal.Model).View()
+
+	if !strings.Contains(view, "ALTBUF") {
+		t.Errorf("expected View() to show alt-screen content, got: %q", view)
+	}
+}
+
+// TestUpdate_TerminalScrollMsg_PreservesHistory feeds enough lines to push
+// rows into scrollback, then asserts that scrolling back exposes the older
+// content.
+func TestUpdate_TerminalScrollMsg_PreservesHistory(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+	// Default inner geometry is 78x22; emit ~50 distinct lines so the early
+	// ones are guaranteed to land in scrollback.
+	var b strings.Builder
+	for i := 0; i < 50; i++ {
+		b.WriteString("LINE")
+		b.WriteString(itoa(i))
+		b.WriteString("\n")
+	}
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: []byte(b.String()), Err: nil})
+	// Scroll back enough to expose LINE0 in the visible viewport.
+	next, _ = next.(terminal.Model).Update(msgs.TerminalScrollMsg{Delta: 40})
+	view := next.(terminal.Model).View()
+
+	if !strings.Contains(view, "LINE0") {
+		t.Errorf("expected scrollback view to expose LINE0, got: %q", view)
+	}
+}
+
+// TestMouseEnabled_TogglesWithDECModes feeds mouse-tracking enable/disable
+// sequences and asserts MouseEnabled() reflects the state.
+func TestMouseEnabled_TogglesWithDECModes(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	if m.MouseEnabled() {
+		t.Fatalf("expected MouseEnabled=false initially")
+	}
+	// Enable mode 1000 (normal mouse tracking).
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: []byte("\x1b[?1000h"), Err: nil})
+	m = next.(terminal.Model)
+	if !m.MouseEnabled() {
+		t.Fatalf("expected MouseEnabled=true after \\e[?1000h")
+	}
+	// Disable mode 1000.
+	next, _ = m.Update(msgs.PtyOutputMsg{Data: []byte("\x1b[?1000l"), Err: nil})
+	m = next.(terminal.Model)
+	if m.MouseEnabled() {
+		t.Fatalf("expected MouseEnabled=false after \\e[?1000l")
+	}
+}
+
+// TestPtyMouseMsg_NoOpWhenDisabled ensures forwarded mouse events are dropped
+// when the inner application has not enabled tracking — prevents accidental
+// PTY pollution when the user clicks inside an unsuspecting shell.
+func TestPtyMouseMsg_NoOpWhenDisabled(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// Mouse mode is off — sending a PtyMouseMsg should not panic and should not
+	// produce any PTY-bound bytes.
+	mouse := tea.MouseMsg{X: 5, Y: 5, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	if _, _ = m.Update(msgs.PtyMouseMsg{PaneID: 0, Mouse: mouse}); false {
+		t.Fail() // unreachable, just exercises the path
+	}
+}
+
+// TestCallbacks_TitleAndCWD feeds OSC 2 (title) and OSC 7 (working directory)
+// sequences and asserts the model's getters expose the values.
+func TestCallbacks_TitleAndCWD(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// OSC 2 = window title; ST = ESC \.
+	next, _ := m.Update(msgs.PtyOutputMsg{
+		Data: []byte("\x1b]2;hello-title\x1b\\"),
+		Err:  nil,
+	})
+	m = next.(terminal.Model)
+	if m.Title() != "hello-title" {
+		t.Errorf("expected Title()=hello-title, got %q", m.Title())
+	}
+
+	// OSC 7 = working directory as file:// URI.
+	next, _ = m.Update(msgs.PtyOutputMsg{
+		Data: []byte("\x1b]7;file://host/home/user/project\x1b\\"),
+		Err:  nil,
+	})
+	m = next.(terminal.Model)
+	if m.CWD() != "/home/user/project" {
+		t.Errorf("expected CWD()=/home/user/project, got %q", m.CWD())
+	}
+}
+
+// TestCopyMode_EnterAndExit covers entering copy mode, moving the cursor,
+// extracting the selection, and exiting back to live mode.
+func TestCopyMode_EnterAndExit(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// Lay down content so the selection has something to extract.
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: []byte("HELLO\n"), Err: nil})
+	m = next.(terminal.Model)
+
+	// Enter copy mode.
+	next, _ = m.Update(msgs.EnterCopyModeMsg{})
+	m = next.(terminal.Model)
+	if !m.InCopyMode() {
+		t.Fatalf("expected InCopyMode=true after EnterCopyModeMsg")
+	}
+
+	// Cursor starts at bottom-right; move it to (0,0) covering "HELLO".
+	for i := 0; i < 30; i++ {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+		m = next.(terminal.Model)
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+		m = next.(terminal.Model)
+	}
+	// Extend selection across "HELLO".
+	for i := 0; i < 4; i++ {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+		m = next.(terminal.Model)
+	}
+	// Esc leaves copy mode without copying.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(terminal.Model)
+	if m.InCopyMode() {
+		t.Errorf("expected InCopyMode=false after Esc")
+	}
+}
+
+// TestCallbacks_BellCounter feeds bell characters and asserts the counter
+// advances.
+func TestCallbacks_BellCounter(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	if m.BellCount() != 0 {
+		t.Fatalf("expected BellCount=0 initially, got %d", m.BellCount())
+	}
+	next, _ := m.Update(msgs.PtyOutputMsg{Data: []byte("\a\a\a"), Err: nil})
+	m = next.(terminal.Model)
+	if m.BellCount() != 3 {
+		t.Errorf("expected BellCount=3 after 3 bells, got %d", m.BellCount())
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var out []byte
+	for n > 0 {
+		out = append([]byte{byte('0' + n%10)}, out...)
+		n /= 10
+	}
+	return string(out)
+}

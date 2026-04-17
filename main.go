@@ -10,7 +10,19 @@ import (
 	"github.com/menegas/lumina/msgs"
 )
 
+// version is injected at build time via -ldflags "-X main.version=...".
+// Defaults to "dev" when built without the flag (e.g. local `go build`).
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-v", "version":
+			fmt.Println(version)
+			return
+		}
+	}
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lumina: config error: %v\n", err)

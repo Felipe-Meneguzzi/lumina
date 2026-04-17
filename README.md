@@ -2,181 +2,405 @@
 
 > **"We have Hyprland at home"** — the Hyprland at home.
 
-Lumina is an open-source VSCode-inspired TUI (Terminal User Interface) editor built with Go and Bubble Tea. It runs entirely inside your terminal, combining a real interactive shell, a file explorer, a text editor, and a live system monitor — all in one keyboard-driven workspace.
+## Instalação rápida
 
-The goal is simple: give developers a productive, lightweight editing environment without ever leaving the terminal, inspired by the tiling and multi-window philosophy of compositors like Hyprland, but running anywhere a terminal runs.
+```bash
+curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+```
 
-> **Built on [Speckkit](https://github.com/github/spec-kit)** — Lumina uses Speckkit as its spec-driven development foundation. Features are designed via structured specs (stored in `specs/`) that drive architecture decisions, contracts, and implementation tasks before any code is written.
+Detecta OS/arquitetura (Linux/macOS, amd64/arm64), baixa o binário da release mais
+recente e instala em `~/.local/bin`. Depois é só rodar `lumina` — no Windows use **WSL 2**.
+
+### Atualizar
+
+Mesma linha. O script pergunta a última release, compara com `lumina --version` e só
+substitui o binário se estiver desatualizado:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+```
+
+Para saber qual versão está rodando agora:
+
+```bash
+lumina --version
+```
+
+Opções avançadas, fixar versão, build a partir do fonte: veja [Instalação](#instalação) abaixo.
+
+---
+
+Lumina é um ambiente de trabalho TUI (Terminal User Interface) inspirado no [Hyprland](https://hyprland.org/),
+escrito em Go com [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+
+**O alvo primário é o WSL**: usuários que vivem em `wsl` dentro do Windows Terminal e
+querem a ergonomia de um window manager tiling (tile panes, chord shortcuts, foco por
+teclado, redimensionamento fluido) sem depender de X11/Wayland, sem sair do terminal e
+sem perder integração com o shell nativo da distro. Roda também em qualquer Linux/macOS
+com um terminal moderno — mas as decisões de keybinding, detecção de shell e
+comportamento default são tunadas para o caso WSL + Windows Terminal.
+
+Dentro de uma única instância do Lumina você tem:
+
+- múltiplos terminais reais (PTY), em tiles recursivos lado-a-lado / empilhados
+- um editor de texto nativo embutido, com salvamento e proteção de alterações
+- um file explorer por pane, com resize por teclado ou mouse
+- um monitor de sistema (CPU, memória, branch git, CWD) no rodapé
+- copy mode estilo tmux com cópia para o clipboard do host via OSC 52
+- mouse passthrough para apps dentro do terminal (vim, htop, lazygit…)
+
+> **Built on [Speckkit](https://github.com/github/spec-kit)** — Lumina usa Speckkit como
+> base de desenvolvimento spec-driven. Features são projetadas via specs estruturadas
+> (em `specs/`) que dirigem decisões de arquitetura, contratos e tasks de implementação
+> antes de qualquer código ser escrito.
+
+---
+
+## Por que "Hyprland para WSL"?
+
+O WSL entrega um Linux excelente em CLI, mas perde toda a camada de window manager
+gráfica. Quem vive no terminal tipicamente cola tmux + vim + lazygit + htop num mosaico
+de janelas do Windows Terminal, o que funciona mas tem atrito:
+
+- cada terminal é uma sessão desacoplada — sem tiling nativo, sem copy-mode consistente
+  entre elas, sem métricas unificadas;
+- redimensionar pane requer mouse ou sequência de comandos do próprio Windows Terminal;
+- atalhos do WM gráfico (Hyprland `SUPER+arrow`, `SUPER+v`, etc.) não existem.
+
+Lumina mimetiza a experiência de um compositor tiling dentro de um único emulador de
+terminal: `alt+b` / `alt+v` dividem, `alt+hjkl` movem foco, `alt+HJKL` redimensionam o
+pane focado, `alt+shift+←→↑↓` movem a borda entre panes. A árvore binária de splits segue
+o modelo mental de quem já usa Hyprland, i3 ou sway.
 
 ---
 
 ## Features
 
-- **Interactive terminal** — real PTY sessions using your system's default shell (`$SHELL`)
-- **Multi-window layout** — split panes horizontally or vertically (up to 4 panels), inspired by tiling window managers
-- **File explorer sidebar** — per-window sidebar with keyboard navigation; toggle it on/off with a single keybind
-- **Text editor** — open, edit, and save files directly in Lumina, with cursor navigation and unsaved-changes protection
-- **System resource monitor** — live CPU, memory, and git branch info in a global status bar; hideable when you need more space
-- **Fully keyboard-driven** — every action has a keybinding; no mouse required
-- **Auto-generated config** — `~/.config/lumina/config.toml` and `keybindings.json` are created on first run with sensible defaults
+### Janelas e layout
+- **Binary split tree** (inspirada no Hyprland): splits horizontais e verticais aninhados
+  recursivamente, até 4 panes simultâneos
+- **Foco espacial por teclado** (`alt+hjkl` ou `alt+arrows`) — o pane vizinho na direção
+  da seta recebe foco, respeitando a geometria real
+- **Redimensionamento relativo ao foco** (`alt+HJKL`) e **absoluto por borda** (`alt+shift+arrows`)
+- **Sidebar por pane** — cada pane pode ter seu próprio file explorer visível/oculto e
+  com largura independente
+
+### Terminal
+- **PTY real** usando o `$SHELL` do usuário (zsh / bash / fish) via `creack/pty`
+- **Emulador VT** completo (`charmbracelet/x/vt`) com suporte a cores 24-bit, estilos e
+  modos DEC
+- **Scrollback** de 2000 linhas, navegável com `PgUp`/`PgDown` ou `Alt+Wheel` do mouse
+- **Copy mode estilo tmux** (`alt+y`): cursor Vim-like (hjkl + `v` + `y`), seleção retangular
+  com highlight visual, cópia para o clipboard do host via **OSC 52** — funciona inclusive
+  através do SSH/WSL porque o sequência atravessa o terminal hospedeiro
+- **Mouse passthrough**: quando o app dentro do terminal ativa mouse tracking (modos DEC
+  1000/1002/1003, usados por vim, htop, tmux, lazygit), Lumina encaminha os eventos com
+  coordenadas traduzidas para o interior do pane
+- **OSC 7 / OSC 0/2**: captura CWD e título reportados pelo shell; reaproveitados pelo
+  `Open terminal here` e pela status bar
+- **Auto-restart** do shell ao sair (sem derrubar a sessão do Lumina)
+- **Tema forçado opcional** (`force_shell_theme`): injeta um prompt oh-my-zsh-inspired
+  para uniformizar shells que não têm configuração própria
+
+### Editor
+- Buffer de texto nativo com `bubbles/viewport`
+- Salvamento via `ctrl+s`
+- Prompt de confirmação ao fechar pane com alterações não salvas
+
+### Mouse
+- **Click-to-focus** em qualquer pane (sidebar, editor, terminal)
+- **Drag** na borda da sidebar para redimensionar
+- **Alt+wheel** para scrollback do terminal (hotkey preservada mesmo quando o app pede
+  mouse tracking, servindo como escape hatch)
+- **Wheel sem Alt** passa direto para o app dentro do terminal quando ele está em modo
+  de mouse
+
+### Status bar
+- CPU (%), memória usada/total, branch git, CWD do pane focado
+- Título (OSC 0/2) reportado pelo app interno do terminal focado
+- Notificações temporárias (save, copy, warnings)
+- Ocultável com `alt+m`
 
 ---
 
-## Installation
+## Instalação
 
-**Requirements**: Go 1.26+, Linux or macOS (PTY not supported on Windows)
+**Requisitos**: Linux ou macOS. No Windows, use **WSL 2** com Ubuntu / Debian / Fedora —
+PTY nativo do Windows não é suportado.
+
+### Opção 1 — one-liner (recomendado)
+
+Baixa o binário da release mais recente e instala em `~/.local/bin` (ou
+`/usr/local/bin`, se disponível):
 
 ```bash
-git clone https://github.com/your-org/lumina.git
+curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+```
+
+Variáveis de ambiente opcionais:
+
+| Variável | Default | Função |
+|---|---|---|
+| `LUMINA_VERSION` | `latest` | Tag a instalar (ex: `v0.3.1`) |
+| `INSTALL_DIR`    | `~/.local/bin` | Diretório destino |
+| `LUMINA_REPO`    | `menegas/lumina` | Override de fork |
+
+Exemplo fixando versão e diretório:
+
+```bash
+LUMINA_VERSION=v0.3.1 INSTALL_DIR=/usr/local/bin \
+  curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+```
+
+O script detecta OS (`linux` / `darwin`) e arquitetura (`amd64` / `arm64`), valida o
+checksum SHA256 (se a release publicar `checksums.txt`) e avisa se o diretório de
+instalação não está no `PATH`.
+
+> **Publicando releases**: o installer espera assets nomeados
+> `lumina-<os>-<arch>` (ex: `lumina-linux-amd64`) anexados à release no GitHub.
+> Opcionalmente um `checksums.txt` com linhas no formato `sha256  lumina-linux-amd64`.
+
+### Opção 2 — build a partir do fonte
+
+Requer Go 1.26+.
+
+```bash
+git clone https://github.com/menegas/lumina.git
 cd lumina
 go build -o lumina .
 ./lumina
 ```
 
-Open a specific file:
+Abrir um arquivo específico:
 
 ```bash
-./lumina path/to/file.txt
+lumina path/to/file.txt
 ```
+
+### Dica para WSL + Windows Terminal
+
+Alguns atalhos padrão do Windows Terminal (ex: `alt+shift+arrow` para mover pane) são
+capturados antes de chegar ao Lumina. Desbinde-os em *Settings → Actions* do Windows
+Terminal para liberar o passthrough.
 
 ---
 
-## Configuration
+## Configuração
 
-On first launch, Lumina creates two files under `~/.config/lumina/`:
+Na primeira execução, o Lumina cria dois arquivos em `~/.config/lumina/`:
 
-| File | Purpose |
+| Arquivo | Função |
 |---|---|
-| `config.toml` | General settings (shell, theme, sidebar width, etc.) |
-| `keybindings.json` | Key bindings for every action |
+| `config.toml` | Configurações gerais (shell, tema, métricas, sidebar) |
+| `keybindings.json` | Mapeamento de teclas de cada ação |
 
 ### config.toml
 
 ```toml
-shell            = "/bin/zsh"   # Shell executable for PTY sessions. Defaults to $SHELL.
-metrics_interval = 1000         # Status bar refresh rate in milliseconds.
-show_hidden      = true         # Show hidden files (dotfiles) in the sidebar.
-sidebar_width    = 30           # Sidebar width in terminal columns.
-theme            = "default"    # UI colour theme.
-force_shell_theme = true        # Inject Lumina's custom prompt into spawned shells.
+shell             = "/bin/zsh"   # Executável do shell para os PTYs. Default: $SHELL.
+metrics_interval  = 1000         # Taxa de refresh da status bar em ms.
+show_hidden       = true         # Mostrar dotfiles na sidebar.
+sidebar_width     = 30           # Largura da sidebar em colunas.
+theme             = "default"    # Tema da UI.
+force_shell_theme = true         # Injeta o prompt customizado do Lumina no shell.
 ```
 
-On **WSL**, if `shell` points to a Windows executable (`.exe`), Lumina rejects it automatically and falls back to the first available POSIX shell, displaying a warning in the status bar.
+No **WSL**, se `shell` apontar para um executável Windows (`.exe`), o Lumina rejeita
+automaticamente e faz fallback para o primeiro POSIX shell disponível, avisando na
+status bar.
 
 ### keybindings.json
 
-Each action maps to a list of key strings — any of them triggers the action. Key notation follows Bubble Tea: `"ctrl+s"`, `"alt+h"`, `"f1"`, `"?"`, etc.
+Cada ação mapeia para uma lista de teclas — qualquer uma delas dispara a ação. A notação
+segue a do Bubble Tea: `"ctrl+s"`, `"alt+h"`, `"f1"`, `"?"`.
 
 ```json
 {
-  "toggle_sidebar": ["alt+e"],
-  "split_horizontal": ["alt+b", "alt+|"]
+  "toggle_sidebar":   ["alt+e"],
+  "split_horizontal": ["alt+b", "alt+|"],
+  "enter_copy_mode":  ["alt+y"]
 }
 ```
 
-Only include the actions you want to override; everything else inherits its default.
+Só inclua as ações que quiser sobrescrever; o restante herda o default.
 
 ---
 
 ## Keybindings
 
-### Focus
+### Foco
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Focus sidebar | `alt+1` / `f1` / `ctrl+1` | Move keyboard focus to the file explorer sidebar |
-| Focus terminal | `alt+2` / `f2` / `ctrl+2` | Move keyboard focus to the terminal pane |
-| Focus editor | `alt+3` / `f3` / `ctrl+3` | Move keyboard focus to the text editor pane |
-| Open terminal here | `ctrl+t` | Open a new terminal in the current working directory |
+| Focar sidebar | `alt+1` / `f1` / `ctrl+1` | Move o foco para o file explorer |
+| Focar terminal | `alt+2` / `f2` / `ctrl+2` | Move o foco para o terminal |
+| Focar editor | `alt+3` / `f3` / `ctrl+3` | Move o foco para o editor |
+| Abrir terminal aqui | `ctrl+t` | Novo terminal no CWD do pane ativo |
 
-### Pane management
+### Gerenciamento de panes
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Split horizontal | `alt+b` | Split the active pane side-by-side (left / right) |
-| Split vertical | `alt+v` | Split the active pane top-and-bottom (up / down) |
-| Close pane | `alt+q` | Close the active pane; its sibling expands to fill the space |
+| Split horizontal | `alt+b` | Divide o pane ativo lado-a-lado |
+| Split vertical | `alt+v` | Divide o pane ativo empilhado |
+| Fechar pane | `alt+q` | Fecha o pane; o irmão expande |
 
-### Pane navigation
+### Navegação entre panes
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Focus pane left | `alt+h` / `alt+←` | Move focus to the nearest pane to the left |
-| Focus pane right | `alt+l` / `alt+→` | Move focus to the nearest pane to the right |
-| Focus pane up | `alt+k` / `alt+↑` | Move focus to the nearest pane above |
-| Focus pane down | `alt+j` / `alt+↓` | Move focus to the nearest pane below |
+| Foco para a esquerda | `alt+h` / `alt+←` | Move foco para o pane à esquerda |
+| Foco para a direita | `alt+l` / `alt+→` | Move foco para o pane à direita |
+| Foco para cima | `alt+k` / `alt+↑` | Move foco para o pane acima |
+| Foco para baixo | `alt+j` / `alt+↓` | Move foco para o pane abaixo |
 
-### Pane resize — relative
+### Redimensionar — relativo ao pane focado
 
-These resize relative to the **active pane** (the boundary adjacent to it moves).
+Mexe a borda adjacente ao pane ativo.
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Grow pane right | `alt+L` | Widen the active pane by moving its right boundary outward |
-| Shrink pane left | `alt+H` | Narrow the active pane by moving its right boundary inward |
-| Grow pane down | `alt+J` | Tighten the active pane by moving its bottom boundary downward |
-| Shrink pane up | `alt+K` | Shrink the active pane by moving its bottom boundary upward |
+| Crescer pane à direita | `alt+L` | Amplia o pane empurrando a borda direita |
+| Diminuir pane à esquerda | `alt+H` | Estreita o pane puxando a borda direita |
+| Crescer pane para baixo | `alt+J` | Amplia verticalmente empurrando a borda inferior |
+| Diminuir pane para cima | `alt+K` | Encolhe verticalmente puxando a borda inferior |
 
-### Pane resize — boundary-absolute
+### Redimensionar — borda absoluta
 
-Arrow keys move the **split boundary** in the direction of the key, regardless of which pane is active.
+Setas movem a borda mais próxima na direção da tecla, independente de foco.
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Boundary right | `alt+shift+→` | Push the nearest vertical split boundary rightward |
-| Boundary left | `alt+shift+←` | Push the nearest vertical split boundary leftward |
-| Boundary down | `alt+shift+↓` | Push the nearest horizontal split boundary downward |
-| Boundary up | `alt+shift+↑` | Push the nearest horizontal split boundary upward |
+| Borda → | `alt+shift+→` | Empurra a divisória vertical para a direita |
+| Borda ← | `alt+shift+←` | Empurra a divisória vertical para a esquerda |
+| Borda ↓ | `alt+shift+↓` | Empurra a divisória horizontal para baixo |
+| Borda ↑ | `alt+shift+↑` | Empurra a divisória horizontal para cima |
 
-> **WSL note**: `alt+shift+arrow` may be captured by Windows Terminal ("move pane"). Unbind those shortcuts in Windows Terminal settings to pass them through.
+> **WSL**: `alt+shift+arrow` pode estar capturado pelo Windows Terminal ("move pane").
+> Desbinde nas configurações do Windows Terminal para o passthrough funcionar.
 
-### Sidebar resize
+### Sidebar
 
-| Action | Default keys | Description |
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Grow sidebar | `alt+}` | Increase the sidebar width by one column |
-| Shrink sidebar | `alt+{` | Decrease the sidebar width by one column |
+| Crescer sidebar | `alt+}` | +1 coluna |
+| Diminuir sidebar | `alt+{` | −1 coluna |
+| Toggle sidebar | `alt+e` | Mostra/oculta a sidebar do pane ativo |
 
-### Toggles
+### Copy mode (terminal)
 
-| Action | Default keys | Description |
+Entra em um modo estilo tmux para selecionar texto com teclado e copiar para o clipboard
+do host via OSC 52.
+
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Toggle sidebar | `alt+e` | Show or hide the file explorer sidebar for the active pane |
-| Toggle status bar | `alt+m` | Show or hide the bottom system-metrics bar |
+| Entrar em copy mode | `alt+y` | Inicia seleção no canto inferior direito do pane |
+| Mover cursor | `h` `j` `k` `l` ou setas | Movimento Vim-like |
+| Estender seleção | `H` `J` `K` `L` / `shift+setas` | Âncora fixa, cursor se move |
+| Alternar âncora | `v` | Redefine a âncora na posição do cursor |
+| Ir para início/fim de linha | `0` / `$` | `home` / `end` |
+| Ir para topo/base | `g` / `G` | — |
+| Copiar e sair | `y` / `enter` | Envia OSC 52; mostra confirmação na status bar |
+| Cancelar | `esc` / `q` / `ctrl+c` | Sai sem copiar |
 
-### File & app
+Enquanto em copy mode a borda do pane vira **amarela** e todo teclado é consumido — o
+shell não recebe nada até o modo terminar. O viewport congela: novo output do shell é
+preservado em scrollback para você não perder o conteúdo selecionado.
 
-| Action | Default keys | Description |
+### Scrollback do terminal
+
+| Ação | Tecla default | Descrição |
 |---|---|---|
-| Save file | `ctrl+s` | Save the file open in the active editor pane |
-| Quit | `ctrl+c` | Exit Lumina (prompts if there are unsaved changes) |
-| Help | `?` | Toggle the keybinding help overlay |
+| Subir no histórico | `PgUp` | 10 linhas |
+| Descer no histórico | `PgDown` | 10 linhas |
+| Subir 3 linhas | `alt+wheel up` | Rola para o histórico |
+| Descer 3 linhas | `alt+wheel down` | Rola em direção ao live |
+| Voltar ao live | Digitar qualquer tecla | Sai do modo scroll |
+
+Em apps que usam alt-screen (vim, less, htop) o scrollback fica desativado — é o
+comportamento correto, porque alt-screen nunca alimenta o histórico.
+
+### Arquivo e aplicativo
+
+| Ação | Tecla default | Descrição |
+|---|---|---|
+| Salvar arquivo | `ctrl+s` | Salva o arquivo aberto no editor ativo |
+| Sair | `ctrl+c` | Encerra o Lumina (pede confirmação se houver não-salvos) |
+| Ajuda | `?` | Abre a overlay de atalhos |
+| Toggle status bar | `alt+m` | Mostra/oculta a barra de métricas |
 
 ---
 
-## Architecture
+## Arquitetura
 
-Lumina follows the Elm architecture (Model/Update/View) via Bubble Tea. Each panel is an independent `tea.Model` composed by the root `app.Model` through delegation and typed messages.
+Lumina segue a arquitetura Elm (Model / Update / View) via Bubble Tea. Cada painel é um
+`tea.Model` independente, composto pelo `app.Model` raiz através de delegação e
+mensagens tipadas — **sem imports circulares, sem estado global mutável**.
 
 ```
 lumina/
 ├── main.go
-├── app/            # Root model — routes messages between components
+├── app/
+│   ├── app.go             # Model raiz — roteia mensagens entre componentes
+│   └── keymap.go          # ÚNICO lugar onde bindings são declarados
 ├── components/
-│   ├── terminal/   # PTY wrapper (creack/pty)
-│   ├── sidebar/    # File explorer
-│   ├── editor/     # Text buffer
-│   └── statusbar/  # Live system metrics
-├── msgs/           # All cross-component tea.Msg types
-└── config/         # Config struct + loader
+│   ├── layout/            # Binary split tree (Hyprland-inspired)
+│   │   ├── layout.go      # Model, Update, View do gerenciador de panes
+│   │   ├── tree.go        # Inserção, remoção e walk recursivos
+│   │   ├── focus.go       # Busca espacial de vizinho por direção
+│   │   ├── bounds.go      # Cálculo de retângulos de cada pane
+│   │   └── render.go      # Composição final em string com bordas
+│   ├── terminal/
+│   │   ├── terminal.go    # Model principal + ciclo de vida do PTY
+│   │   ├── scrollback.go  # Render composto (scrollback + live)
+│   │   ├── copymode.go    # Estado + render do copy mode + OSC 52
+│   │   ├── mouse.go       # Callbacks do emulador (DEC modes, title, CWD, bell)
+│   │   ├── keys.go        # Tradução de tea.KeyMsg → bytes do PTY
+│   │   └── theme.go       # Injeção opcional do prompt customizado
+│   ├── sidebar/           # File explorer (bubbles/list + os.ReadDir)
+│   ├── editor/            # Text buffer ([]string + bubbles/viewport)
+│   └── statusbar/         # Métricas (gopsutil ticker)
+├── msgs/
+│   └── msgs.go            # TODOS os tea.Msg customizados
+├── config/
+│   ├── config.go
+│   └── keybindings.go
+├── specs/                 # Spec-kit: specs e contratos de cada feature
+└── tests/integration/     # Testes de fluxo cross-component
 ```
+
+### Stack de bibliotecas
+
+| Camada | Lib | Uso |
+|---|---|---|
+| TUI framework | [bubbletea](https://github.com/charmbracelet/bubbletea) | Runtime Model/Update/View |
+| Estilo | [lipgloss](https://github.com/charmbracelet/lipgloss) | Bordas, cores, layout |
+| Widgets | [bubbles](https://github.com/charmbracelet/bubbles) | viewport, list, help |
+| Emulador VT | [charmbracelet/x/vt](https://github.com/charmbracelet/x) | Parser de escape sequences, scrollback, DEC modes |
+| Render de células | [charmbracelet/ultraviolet](https://github.com/charmbracelet/ultraviolet) | Acesso a glyphs estilizados |
+| PTY | [creack/pty](https://github.com/creack/pty) | fork+exec com pseudo-terminal |
+| Métricas | [gopsutil/v3](https://github.com/shirou/gopsutil) | CPU, memória |
+| Clipboard | [go-osc52](https://github.com/aymanbagabas/go-osc52) | Cópia via OSC 52 |
+| Config | [BurntSushi/toml](https://github.com/BurntSushi/toml) | TOML parsing |
+
+### Regras de arquitetura
+
+- Todo I/O assíncrono (leituras de PTY, ticker, leituras de arquivo) **deve** ser
+  `tea.Cmd` — nunca bloqueie `Update()`.
+- `Update()` **deve** retornar em ≤16ms (orçamento de frame para ≥30 FPS).
+- `View()` **deve** retornar string com exatamente `m.height` linhas e cada linha ≤
+  `m.width` colunas.
+- Keybindings **apenas** em `app/keymap.go` via `key.Binding`.
+- Comunicação cross-component **apenas** via tipos em `msgs/msgs.go`.
+- Estilos **apenas** via Lip Gloss — ANSI bruto é proibido fora de `components/terminal/`.
+- PTY resize propaga via `pty.Setsize` sempre que chega `tea.WindowSizeMsg`.
 
 ---
 
-## Development
+## Desenvolvimento
 
 ```bash
-# Run tests
+# Rodar testes
 go test ./...
 
 # Lint
@@ -185,5 +409,9 @@ golangci-lint run
 # Build
 go build -o lumina .
 ```
+
+Cada `tea.Model` exportado tem testes unitários isolados (sem dependência de outros
+componentes), alimentados com `tea.Msg` sintéticos. Testes de integração em
+`tests/integration/` cobrem novos `tea.Msg` adicionados a `msgs/msgs.go`.
 
 ---

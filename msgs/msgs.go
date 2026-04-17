@@ -1,6 +1,10 @@
 package msgs
 
-import "time"
+import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // FocusTarget identifies which pane has keyboard focus.
 type FocusTarget int
@@ -79,6 +83,18 @@ type PtyInputMsg struct {
 	PaneID int
 	Data   []byte
 }
+
+// PtyMouseMsg routes a mouse event to a specific terminal pane that has
+// requested mouse tracking. The Mouse field's X/Y are pane-local coordinates
+// relative to the inside of the pane's border (0,0 = first content cell).
+type PtyMouseMsg struct {
+	PaneID int
+	Mouse  tea.MouseMsg
+}
+
+// EnterCopyModeMsg requests that the focused terminal enter tmux-style copy
+// mode (interactive selection + OSC52 clipboard).
+type EnterCopyModeMsg struct{}
 
 // PaneSplitMsg requests splitting the active pane.
 type PaneSplitMsg struct {

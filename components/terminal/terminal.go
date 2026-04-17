@@ -2,24 +2,16 @@ package terminal
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
-	vt10x "github.com/hinshun/vt10x"
 	"github.com/menegas/lumina/config"
 	"github.com/menegas/lumina/msgs"
-)
-
-// Glyph attribute bit flags (matching vt10x internal constants).
-const (
-	attrReverse   int16 = 1 << 0
-	attrUnderline int16 = 1 << 1
-	attrBold      int16 = 1 << 2
-	attrItalic    int16 = 1 << 4
 )
 
 var (
@@ -34,15 +26,16 @@ type Model struct {
 	forceTheme   bool
 	ptyFile      *os.File
 	cmd          *exec.Cmd
-	vt           vt10x.Terminal  // VT100 screen buffer — handles all escape sequences
+	vt           *vt.Emulator    // virtual terminal — handles all escape sequences
 	reservedKeys map[string]bool // keys not to forward to PTY (global shortcuts)
 	width        int
 	height       int
 	focused      bool
 	closed       bool             // true when running without a live PTY (used in tests)
 	paneID       int              // identifies this terminal in multi-pane output routing
-	scrollback   [][]vt10x.Glyph  // rows that have been pushed off the top of the viewport
-	scrollOffset int              // how many rows above the live view the user is currently looking at
+	scrollOffset int          // how many rows above the live view the user is currently looking at
+	state        *sharedState // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
+	copy         *copyState   // non-nil when the terminal is in tmux-style copy mode
 }
 
 // New creates a new terminal Model and starts the shell process.
@@ -53,8 +46,11 @@ func New(cfg config.Config) (Model, error) {
 		forceTheme: cfg.ForceShellTheme,
 		width:      80,
 		height:     24,
-		vt:         vt10x.New(vt10x.WithSize(cols, rows)),
+		vt:         vt.NewEmulator(cols, rows),
+		state:      &sharedState{},
 	}
+	m.vt.SetScrollbackSize(scrollbackMax)
+	installCallbacks(m.vt, m.state)
 
 	if err := m.startShell(); err != nil {
 		return m, fmt.Errorf("starting shell: %w", err)
@@ -63,6 +59,8 @@ func New(cfg config.Config) (Model, error) {
 }
 
 // Close shuts down the PTY without restarting — used in tests to skip PTY creation.
+// The emulator is intentionally left open so tests can still feed PtyOutputMsg
+// and assert View(); the InputPipe goroutine exits on its own once the PTY closes.
 func (m *Model) Close() {
 	m.closed = true
 	if m.ptyFile != nil {
@@ -83,6 +81,9 @@ func (m Model) CloseResources() {
 	}
 	if m.cmd != nil && m.cmd.Process != nil {
 		_ = m.cmd.Process.Kill()
+	}
+	if m.vt != nil {
+		_ = m.vt.Close()
 	}
 }
 
@@ -116,7 +117,7 @@ func (m *Model) startShell() error {
 		return err
 	}
 
-	cols, rows := m.vt.Size()
+	cols, rows := m.vt.Width(), m.vt.Height()
 	if err := pty.Setsize(ptmx, &pty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),
@@ -127,13 +128,20 @@ func (m *Model) startShell() error {
 
 	m.ptyFile = ptmx
 	m.cmd = cmd
+
+	// Forward emulator-generated input (mouse SGR, paste, query responses)
+	// to the PTY. The goroutine exits when the emulator is Closed.
+	emu := m.vt
+	go func() {
+		_, _ = io.Copy(ptmx, emu)
+	}()
 	return nil
 }
 
 func setEnv(env []string, key, value string) []string {
 	prefix := key + "="
 	for i, e := range env {
-		if strings.HasPrefix(e, prefix) {
+		if e[:min(len(e), len(prefix))] == prefix {
 			env[i] = prefix + value
 			return env
 		}
@@ -169,24 +177,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.PtyOutputMsg:
 		if msg.Err != nil {
 			// Shell exited — auto-restart (FR-010).
-			cols, rows := m.vt.Size()
-			m.vt = vt10x.New(vt10x.WithSize(cols, rows))
-			m.scrollback = nil
+			// The previous emulator's InputPipe goroutine already exited because
+			// its PTY was closed, so we just discard it and start fresh.
+			cols, rows := m.vt.Width(), m.vt.Height()
+			m.vt = vt.NewEmulator(cols, rows)
+			m.vt.SetScrollbackSize(scrollbackMax)
+			*m.state = sharedState{}
+			installCallbacks(m.vt, m.state)
 			m.scrollOffset = 0
 			if err := m.startShell(); err != nil {
 				return m, nil
 			}
 			return m, waitForOutput(m.ptyFile, m.paneID)
 		}
-		// Feed raw bytes to the VT100 emulator while capturing scroll history.
-		userScrolled := m.scrollOffset > 0
-		pushed := m.writeWithScrollback(msg.Data)
-		// Preserve the user's viewing position when new history is appended.
-		if userScrolled && pushed > 0 {
-			m.scrollOffset += pushed
-			if m.scrollOffset > len(m.scrollback) {
-				m.scrollOffset = len(m.scrollback)
+		// Feed raw bytes to the emulator. If the user is currently scrolled into
+		// history — or in copy mode (where the viewport must stay frozen while
+		// selecting) — preserve their viewing position by tracking how many lines
+		// were pushed into scrollback by this write.
+		prevSBLen := m.vt.ScrollbackLen()
+		freezeView := m.scrollOffset > 0 || m.copy != nil
+		_, _ = m.vt.Write(msg.Data)
+		if freezeView {
+			pushed := m.vt.ScrollbackLen() - prevSBLen
+			if pushed > 0 {
+				m.scrollOffset += pushed
 			}
+		}
+		if sbLen := m.vt.ScrollbackLen(); m.scrollOffset > sbLen {
+			m.scrollOffset = sbLen
 		}
 		if m.ptyFile != nil {
 			return m, waitForOutput(m.ptyFile, m.paneID)
@@ -205,6 +223,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msgs.PtyMouseMsg:
+		if m.MouseEnabled() && !m.InCopyMode() {
+			teaMouseToVT(m.vt, msg.Mouse)
+		}
+		return m, nil
+
+	case msgs.EnterCopyModeMsg:
+		m.enterCopyMode()
+		return m, nil
+
+	case tea.KeyMsg:
+		// Copy mode swallows all keys until the user copies or aborts.
+		if m.copy != nil {
+			cmd := m.handleCopyKey(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case msgs.TerminalScrollMsg:
 		if msg.Reset {
 			m.scrollReset()
@@ -219,14 +255,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		innerCols := max(1, m.width-2)
 		innerRows := max(1, m.height-2)
 		m.vt.Resize(innerCols, innerRows)
-		// Width changed — previously captured rows would misalign, so drop them.
-		prevCols := 0
-		if len(m.scrollback) > 0 {
-			prevCols = len(m.scrollback[0])
+		// Resize may shrink/reflow scrollback; clamp any stored offset so it
+		// still points inside the valid range.
+		if sbLen := m.vt.ScrollbackLen(); m.scrollOffset > sbLen {
+			m.scrollOffset = sbLen
 		}
-		if prevCols != 0 && prevCols != innerCols {
-			m.scrollback = nil
-			m.scrollOffset = 0
+		// Copy-mode cursor coordinates are viewport-local; clamp them to the
+		// new viewport to avoid selecting past the edge after shrink.
+		if m.copy != nil {
+			if m.copy.cursor.x >= innerCols {
+				m.copy.cursor.x = innerCols - 1
+			}
+			if m.copy.cursor.y >= innerRows {
+				m.copy.cursor.y = innerRows - 1
+			}
+			if m.copy.anchor.x >= innerCols {
+				m.copy.anchor.x = innerCols - 1
+			}
+			if m.copy.anchor.y >= innerRows {
+				m.copy.anchor.y = innerRows - 1
+			}
 		}
 		if m.ptyFile != nil {
 			_ = pty.Setsize(m.ptyFile, &pty.Winsize{
@@ -240,122 +288,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// vtColor converts a vt10x Color to a lipgloss Color string.
-// Returns "" for default/unset colors so lipgloss uses the terminal default.
-func vtColor(c vt10x.Color) lipgloss.Color {
-	if c >= vt10x.DefaultFG {
-		return lipgloss.Color("")
-	}
-	return lipgloss.Color(fmt.Sprintf("%d", c))
-}
-
-// renderGlyphRow converts a slice of glyphs into a styled, batched string.
-// Consecutive cells sharing style are merged for efficiency.
-func renderGlyphRow(glyphs []vt10x.Glyph) string {
-	var (
-		out     strings.Builder
-		curFG   = vt10x.DefaultFG
-		curBG   = vt10x.DefaultBG
-		curMode int16
-		pending strings.Builder
-	)
-
-	flush := func() {
-		if pending.Len() == 0 {
-			return
-		}
-		style := lipgloss.NewStyle()
-		fg := vtColor(curFG)
-		bg := vtColor(curBG)
-		if fg != "" {
-			style = style.Foreground(fg)
-		}
-		if bg != "" {
-			style = style.Background(bg)
-		}
-		if curMode&attrBold != 0 {
-			style = style.Bold(true)
-		}
-		if curMode&attrUnderline != 0 {
-			style = style.Underline(true)
-		}
-		if curMode&attrItalic != 0 {
-			style = style.Italic(true)
-		}
-		if curMode&attrReverse != 0 {
-			style = style.Reverse(true)
-		}
-		out.WriteString(style.Render(pending.String()))
-		pending.Reset()
-	}
-
-	for _, g := range glyphs {
-		if g.FG != curFG || g.BG != curBG || g.Mode != curMode {
-			flush()
-			curFG = g.FG
-			curBG = g.BG
-			curMode = g.Mode
-		}
-		ch := g.Char
-		if ch == 0 {
-			ch = ' '
-		}
-		pending.WriteRune(ch)
-	}
-	flush()
-	return out.String()
-}
-
-// renderScreen renders the live terminal viewport as a styled string.
-func renderScreen(vt vt10x.Terminal) string {
-	cols, rows := vt.Size()
-	var out strings.Builder
-	for y := 0; y < rows; y++ {
-		out.WriteString(renderGlyphRow(snapshotRow(vt, y, cols)))
-		if y < rows-1 {
-			out.WriteByte('\n')
-		}
-	}
-	return out.String()
-}
-
-// renderWithScrollback renders `rows` rows combining (oldest→newest) the
-// scrollback buffer and the live viewport. `offset` is how many rows above
-// the live view the user is currently looking at (0 = live).
-func renderWithScrollback(vt vt10x.Terminal, scrollback [][]vt10x.Glyph, offset int) string {
-	cols, rows := vt.Size()
-	if offset <= 0 {
-		return renderScreen(vt)
-	}
-	n := len(scrollback)
-	if offset > n {
-		offset = n
-	}
-	// Combined indices: [0..n) = scrollback, [n..n+rows) = live rows.
-	start := n - offset
-
-	var out strings.Builder
-	for i := 0; i < rows; i++ {
-		idx := start + i
-		if idx < n {
-			out.WriteString(renderGlyphRow(scrollback[idx]))
-		} else {
-			out.WriteString(renderGlyphRow(snapshotRow(vt, idx-n, cols)))
-		}
-		if i < rows-1 {
-			out.WriteByte('\n')
-		}
-	}
-	return out.String()
-}
-
-// View renders the terminal pane using the VT100 screen buffer.
+// View renders the terminal pane using the virtual terminal screen.
 func (m Model) View() string {
 	style := unfocusedBorder
 	if m.focused {
 		style = focusedBorder
 	}
-	content := renderWithScrollback(m.vt, m.scrollback, m.scrollOffset)
+	if m.copy != nil {
+		style = style.BorderForeground(lipgloss.Color("214")) // amber border in copy mode
+	}
+	var content string
+	if m.copy != nil {
+		content = m.renderCopyMode()
+	} else {
+		content = m.renderViewport()
+	}
 	return style.Width(m.width - 2).Height(m.height - 2).Render(content)
 }
 

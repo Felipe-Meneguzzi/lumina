@@ -166,6 +166,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Input always routes to the focused terminal.
 		return m.updateFocused(msg)
 
+	case msgs.PtyMouseMsg:
+		return m.routePtyMouse(msg)
+
+	case msgs.EnterCopyModeMsg:
+		return m.updateFocused(msg)
+
 	case msgs.OpenFileMsg:
 		return m.handleOpenFile(msg)
 
@@ -284,6 +290,25 @@ func (m Model) updateFocused(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // routePtyOutput routes PtyOutputMsg to the terminal leaf with matching PaneID.
 func (m Model) routePtyOutput(msg msgs.PtyOutputMsg) (tea.Model, tea.Cmd) {
+	for _, leaf := range allLeaves(m.root) {
+		if leaf.Kind != KindTerminal {
+			continue
+		}
+		inner := leafInner(leaf)
+		if inner == nil {
+			continue
+		}
+		if p, ok := inner.(paneIDer); ok && p.PaneID() == msg.PaneID {
+			next, cmd := inner.Update(msg)
+			setLeafInner(leaf, next)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
+// routePtyMouse routes PtyMouseMsg to the terminal leaf with matching PaneID.
+func (m Model) routePtyMouse(msg msgs.PtyMouseMsg) (tea.Model, tea.Cmd) {
 	for _, leaf := range allLeaves(m.root) {
 		if leaf.Kind != KindTerminal {
 			continue

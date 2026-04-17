@@ -32,6 +32,29 @@ func TestNew_FocusedKindIsTerminal(t *testing.T) {
 	}
 }
 
+// TestPaneBounds_AfterSplit verifies that after splitting horizontally, each
+// pane reports a non-overlapping rectangle that together cover the full layout.
+func TestPaneBounds_AfterSplit(t *testing.T) {
+	m := newTestLayout(t)
+	next, _ := m.Update(msgs.LayoutResizeMsg{Width: 100, Height: 30})
+	m = next.(layout.Model)
+
+	// Split horizontally — creates a sibling pane to the right.
+	next, _ = m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	m = next.(layout.Model)
+
+	x, y, w, h, ok := m.FocusedBounds()
+	if !ok {
+		t.Fatal("expected FocusedBounds to succeed after split")
+	}
+	if y != 0 || h != 30 {
+		t.Errorf("expected y=0 h=30, got y=%d h=%d", y, h)
+	}
+	if x <= 0 || w <= 0 || x+w > 100 {
+		t.Errorf("expected non-overlapping right pane within 100 cols, got x=%d w=%d", x, w)
+	}
+}
+
 func TestView_SinglePane_ReturnsNonEmpty(t *testing.T) {
 	m := newTestLayout(t)
 	v := m.View()

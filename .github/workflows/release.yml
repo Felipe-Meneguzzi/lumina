@@ -1,0 +1,166 @@
+name: Release
+
+# Disparo manual: aba "Actions" → "Release" → "Run workflow".
+# O usuário informa a tag (ex: v0.3.1) e, opcionalmente, notas de release.
+# O workflow valida a tag, roda testes, faz cross-build (linux/darwin × amd64/arm64),
+# gera checksums.txt e publica tudo numa nova release marcada como --latest.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a publicar (formato vX.Y.Z, ex: v0.3.1)'
+        required: true
+        type: string
+      notes:
+        description: 'Notas de release (opcional — markdown aceito)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Marcar como pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag format
+        run: |
+          TAG="${{ inputs.tag }}"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::tag inválida: '$TAG' (esperado: vX.Y.Z ou vX.Y.Z-suffix)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Ensure tag does not already exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::release '$TAG' já existe — escolha outra tag"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag '$TAG' já existe no remote"
+            exit 1
+          fi
+
+  test:
+    name: Test
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test
+        run: go test ./...
+
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build lumina-${{ matrix.os }}-${{ matrix.arch }}
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+          TAG: ${{ inputs.tag }}
+        run: |
+          out="lumina-${GOOS}-${GOARCH}"
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${TAG}" \
+            -o "$out" .
+          file "$out"
+          ls -la "$out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumina-${{ matrix.os }}-${{ matrix.arch }}
+          path: lumina-${{ matrix.os }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums.txt
+        working-directory: dist
+        run: |
+          sha256sum lumina-* > checksums.txt
+          cat checksums.txt
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          USER_NOTES="${{ inputs.notes }}"
+          FOOTER=$(cat <<EOF
+
+          ---
+          Build from commit ${SHORT_SHA}.
+
+          Install / update:
+          \`\`\`
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          \`\`\`
+          EOF
+          )
+          if [[ -n "$USER_NOTES" ]]; then
+            NOTES="${USER_NOTES}${FOOTER}"
+          else
+            NOTES="Release ${TAG}.${FOOTER}"
+          fi
+
+          FLAGS=(--target "$GITHUB_SHA")
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+            FLAGS+=(--prerelease)
+          else
+            FLAGS+=(--latest)
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            "${FLAGS[@]}" \
+            dist/lumina-* \
+            dist/checksums.txt

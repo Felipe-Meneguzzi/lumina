@@ -229,10 +229,34 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// handleMouse handles mouse events: click-to-focus, sidebar drag-to-resize,
-// and Alt+wheel scrollback for terminal panes.
+// handleMouse handles mouse events: pass-through to terminals that requested
+// mouse tracking, click-to-focus, sidebar drag-to-resize, and Alt+wheel
+// scrollback for terminal panes.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	const borderTolerance = 1
+
+	// Mouse passthrough: when the focused terminal has put itself into a
+	// tracking mode (1000/1002/1003), forward events that land inside its
+	// content area (excluding border). Alt+wheel still wins so the user
+	// retains an escape hatch for our own scrollback UI.
+	if !msg.Alt && m.focus == focusContent && m.layout.FocusedMouseEnabled() {
+		if px, py, pw, ph, ok := m.layout.FocusedBounds(); ok {
+			gx := msg.X - m.sidebarWidth
+			gy := msg.Y
+			// Subtract pane origin and 1 cell of border on each side.
+			localX := gx - px - 1
+			localY := gy - py - 1
+			if localX >= 0 && localY >= 0 && localX < pw-2 && localY < ph-2 {
+				inner := msg
+				inner.X = localX
+				inner.Y = localY
+				return m.updateLayout(msgs.PtyMouseMsg{
+					PaneID: int(m.layout.FocusedID()),
+					Mouse:  inner,
+				})
+			}
+		}
+	}
 
 	// Alt+wheel scrolls the focused terminal's scrollback history, regardless of
 	// where the pointer is — Alt gates it so plain wheel events stay reserved
@@ -361,6 +385,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openTerminalInSidebarDir()
 		}
 
+	case "enter_copy_mode":
+		if m.focus == focusContent && m.layout.FocusedKind() == layout.KindTerminal {
+			return m.updateLayout(msgs.EnterCopyModeMsg{})
+		}
+
 	case "quit":
 		if m.focus != focusContent || m.layout.FocusedKind() != layout.KindTerminal {
 			return m, tea.Quit
@@ -374,6 +403,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// ── Terminal raw mode — forward input to PTY when content is focused ──────
 	if m.focus == focusContent && m.layout.FocusedKind() == layout.KindTerminal {
+		// In copy mode the terminal consumes every key (movement, copy, exit) —
+		// nothing reaches the PTY until the user leaves the mode.
+		if m.layout.FocusedInCopyMode() {
+			return m.updateLayout(msg)
+		}
 		// PgUp/PgDown drive the scrollback history instead of being forwarded.
 		switch msg.Type {
 		case tea.KeyPgUp:

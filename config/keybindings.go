@@ -48,6 +48,9 @@ type Keybindings struct {
 	// Sidebar and statusbar visibility toggles
 	ToggleSidebar   []string `json:"toggle_sidebar"`
 	ToggleStatusBar []string `json:"toggle_statusbar"`
+
+	// Terminal copy mode (tmux-style selection + OSC52 clipboard)
+	EnterCopyMode []string `json:"enter_copy_mode"`
 }
 
 func defaultKeybindings() Keybindings {
@@ -91,6 +94,9 @@ func defaultKeybindings() Keybindings {
 		// alt+e (Explorer, like VSCode) passes through Windows Terminal safely.
 		ToggleSidebar:   []string{"alt+e"},
 		ToggleStatusBar: []string{"alt+m"},
+
+		// alt+y enters copy mode (tmux convention is prefix+[, but we have no prefix).
+		EnterCopyMode: []string{"alt+y"},
 	}
 }
 
@@ -144,6 +150,7 @@ func LoadKeybindings() (Keybindings, error) {
 	if len(partial.ShrinkSidebar) > 0    { kb.ShrinkSidebar    = partial.ShrinkSidebar    }
 	if len(partial.ToggleSidebar) > 0    { kb.ToggleSidebar    = partial.ToggleSidebar    }
 	if len(partial.ToggleStatusBar) > 0  { kb.ToggleStatusBar  = partial.ToggleStatusBar  }
+	if len(partial.EnterCopyMode) > 0    { kb.EnterCopyMode    = partial.EnterCopyMode    }
 
 	return kb, nil
 }
@@ -176,6 +183,7 @@ func (kb Keybindings) Action(key string) string {
 	for _, k := range kb.ShrinkSidebar    { if k == key { return "shrink_sidebar"      } }
 	for _, k := range kb.ToggleSidebar    { if k == key { return "toggle_sidebar"      } }
 	for _, k := range kb.ToggleStatusBar  { if k == key { return "toggle_statusbar"    } }
+	for _, k := range kb.EnterCopyMode    { if k == key { return "enter_copy_mode"     } }
 	return ""
 }
 
@@ -205,6 +213,7 @@ func (kb Keybindings) GlobalKeys() map[string]bool {
 	for _, k := range kb.ShrinkSidebar    { reserved[k] = true }
 	for _, k := range kb.ToggleSidebar    { reserved[k] = true }
 	for _, k := range kb.ToggleStatusBar  { reserved[k] = true }
+	for _, k := range kb.EnterCopyMode    { reserved[k] = true }
 	return reserved
 }
 

@@ -1,116 +1,104 @@
 package terminal
 
 import (
-	vt10x "github.com/hinshun/vt10x"
+	"strings"
+
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
-// scrollbackMax caps the number of history rows the terminal keeps.
+// scrollbackMax caps the number of history rows the emulator keeps.
 const scrollbackMax = 2000
 
-// snapshotRow returns a copy of the glyphs on a given terminal row.
-func snapshotRow(vt vt10x.Terminal, y, cols int) []vt10x.Glyph {
-	row := make([]vt10x.Glyph, cols)
-	for x := 0; x < cols; x++ {
-		row[x] = vt.Cell(x, y)
-	}
-	return row
-}
-
-// rowEmpty reports whether a glyph row contains only whitespace/null runes
-// with no explicit coloring. Empty rows are dropped before they reach scrollback.
-func rowEmpty(row []vt10x.Glyph) bool {
-	for _, g := range row {
-		if g.Char != 0 && g.Char != ' ' {
-			return false
-		}
-	}
-	return true
-}
-
-// rowsEqual compares two glyph rows for character + style equality.
-func rowsEqual(a, b []vt10x.Glyph) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].Char != b[i].Char || a[i].FG != b[i].FG ||
-			a[i].BG != b[i].BG || a[i].Mode != b[i].Mode {
-			return false
-		}
-	}
-	return true
-}
-
-// writeWithScrollback writes data to the terminal while capturing rows that
-// get scrolled off the top into the scrollback buffer. The input is split at
-// newlines so each potential scroll point is evaluated independently.
+// renderViewport returns the terminal content as a styled string.
 //
-// Returns the number of rows that were appended to scrollback, which the
-// caller uses to preserve the user's scroll offset when they are in history.
-func (m *Model) writeWithScrollback(data []byte) int {
-	cols, rows := m.vt.Size()
-	pushed := 0
+// When the user is viewing the live screen (or the alternate screen is
+// active — alt-screen apps don't write to scrollback), it delegates to
+// the emulator's own renderer. When scrolled into history on the main
+// screen, it composes scrollback rows + live rows manually so the user
+// can see prior output.
+func (m Model) renderViewport() string {
+	if m.scrollOffset <= 0 || m.vt.IsAltScreen() {
+		return m.vt.Render()
+	}
+	cols, rows := m.vt.Width(), m.vt.Height()
+	sbLen := m.vt.ScrollbackLen()
+	offset := m.scrollOffset
+	if offset > sbLen {
+		offset = sbLen
+	}
+	// sbStart is the index of the oldest visible scrollback line.
+	// Combined indices: [sbStart..sbLen) = scrollback, [sbLen..sbLen+rows) = live rows.
+	sbStart := sbLen - offset
 
-	// Split at newlines so we can detect scrolls per-line.
-	start := 0
-	for i := 0; i <= len(data); i++ {
-		atEnd := i == len(data)
-		if !atEnd && data[i] != '\n' {
+	var out strings.Builder
+	for i := 0; i < rows; i++ {
+		idx := sbStart + i
+		writeRow(&out, m.vt, idx, sbLen, cols)
+		if i < rows-1 {
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
+}
+
+// writeRow appends a single row's worth of styled cells to out. When idx is
+// below sbLen the row comes from scrollback; otherwise from the live screen.
+func writeRow(out *strings.Builder, e vtReader, idx, sbLen, cols int) {
+	for x := 0; x < cols; x++ {
+		var cell *uv.Cell
+		if idx < sbLen {
+			cell = e.ScrollbackCellAt(x, idx)
+		} else {
+			cell = e.CellAt(x, idx-sbLen)
+		}
+		if cell == nil || cell.Content == "" {
+			out.WriteByte(' ')
 			continue
 		}
-		chunk := data[start : min(i+1, len(data))]
-		if len(chunk) == 0 {
-			start = i + 1
-			continue
+		if cell.Style.IsZero() {
+			out.WriteString(cell.Content)
+		} else {
+			out.WriteString(cell.Style.Styled(cell.Content))
 		}
-
-		// Snapshot all rows prior to the write so we can identify any that
-		// shifted off the top. Only rows 0..rows-1 can be lost to a scroll.
-		preRows := make([][]vt10x.Glyph, rows)
-		for y := 0; y < rows; y++ {
-			preRows[y] = snapshotRow(m.vt, y, cols)
-		}
-
-		_, _ = m.vt.Write(chunk)
-
-		// Determine the shift amount: how many rows of preRows were dropped.
-		// Post-row 0 should match preRow[shift] if the screen scrolled by `shift`.
-		post0 := snapshotRow(m.vt, 0, cols)
-		shift := 0
-		for k := 1; k < rows; k++ {
-			if rowsEqual(post0, preRows[k]) {
-				shift = k
-				break
-			}
-		}
-
-		for s := 0; s < shift; s++ {
-			if rowEmpty(preRows[s]) {
-				continue
-			}
-			m.scrollback = append(m.scrollback, preRows[s])
-			pushed++
-		}
-		start = i + 1
 	}
+}
 
-	// Trim scrollback to max, remembering how many we dropped so the caller
-	// can clamp any stored offset if needed.
-	if overflow := len(m.scrollback) - scrollbackMax; overflow > 0 {
-		m.scrollback = m.scrollback[overflow:]
+// vtReader is the subset of *vt.Emulator that renderViewport needs. Defined
+// as a local interface so writeRow can be unit-tested without a full PTY.
+type vtReader interface {
+	ScrollbackCellAt(x, y int) *uv.Cell
+	CellAt(x, y int) *uv.Cell
+}
+
+// viewportStart returns the combined-index of the topmost visible row.
+// When the user is live (offset 0) or the alt-screen is active, the viewport
+// starts at the first live row (combined index = sbLen). Otherwise it climbs
+// back into scrollback by offset, clamped to [0, sbLen].
+func viewportStart(e altScreenReader, scrollOffset, sbLen int) int {
+	if scrollOffset <= 0 || e.IsAltScreen() {
+		return sbLen
 	}
-	return pushed
+	offset := scrollOffset
+	if offset > sbLen {
+		offset = sbLen
+	}
+	return sbLen - offset
+}
+
+// altScreenReader is the subset of *vt.Emulator that viewportStart needs.
+type altScreenReader interface {
+	IsAltScreen() bool
 }
 
 // scrollDelta applies a positive (into history) or negative (toward live)
-// change to the current scroll offset, clamping to [0, len(scrollback)].
+// change to the current scroll offset, clamping to [0, ScrollbackLen()].
 func (m *Model) scrollDelta(delta int) {
 	m.scrollOffset += delta
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}
-	if m.scrollOffset > len(m.scrollback) {
-		m.scrollOffset = len(m.scrollback)
+	if sbLen := m.vt.ScrollbackLen(); m.scrollOffset > sbLen {
+		m.scrollOffset = sbLen
 	}
 }
 
