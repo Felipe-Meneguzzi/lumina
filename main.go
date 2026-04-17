@@ -5,11 +5,11 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/menegas/lumina/app"
-	"github.com/menegas/lumina/cli"
-	"github.com/menegas/lumina/components/layout"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/app"
+	"github.com/Felipe-Meneguzzi/lumina/cli"
+	"github.com/Felipe-Meneguzzi/lumina/components/layout"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 // version is injected at build time via -ldflags "-X main.version=...".

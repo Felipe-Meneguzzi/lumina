@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/menegas/lumina/components/statusbar"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/components/statusbar"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 var testCfg = config.Config{

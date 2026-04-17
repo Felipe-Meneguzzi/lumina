@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	luminaRepo    = "menegas/lumina"
+	luminaRepo    = "Felipe-Meneguzzi/lumina"
 	ghAPIBase     = "https://api.github.com/repos/" + luminaRepo
 	ghReleasesURL = "https://github.com/" + luminaRepo + "/releases/download"
 )

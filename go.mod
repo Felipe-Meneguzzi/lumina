@@ -1,4 +1,4 @@
-module github.com/menegas/lumina
+module github.com/Felipe-Meneguzzi/lumina
 
 go 1.26.1
 

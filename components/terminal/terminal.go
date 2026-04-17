@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 var (

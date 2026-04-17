@@ -1,6 +1,6 @@
 package layout
 
-import "github.com/menegas/lumina/msgs"
+import "github.com/Felipe-Meneguzzi/lumina/msgs"
 
 // findNeighbour returns the PaneID of the nearest leaf in the given direction
 // relative to the leaf with currentID, or (0, false) if no neighbour exists.

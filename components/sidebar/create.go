@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 // createPrompt is the ephemeral submodel that captures the user's input when

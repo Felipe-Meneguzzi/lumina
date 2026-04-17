@@ -11,12 +11,12 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/menegas/lumina/components/layout"
-	"github.com/menegas/lumina/components/sidebar"
-	"github.com/menegas/lumina/components/statusbar"
-	"github.com/menegas/lumina/components/terminal"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/components/layout"
+	"github.com/Felipe-Meneguzzi/lumina/components/sidebar"
+	"github.com/Felipe-Meneguzzi/lumina/components/statusbar"
+	"github.com/Felipe-Meneguzzi/lumina/components/terminal"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 // shellEscape wraps a path in single quotes and escapes any embedded single quotes,

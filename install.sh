@@ -3,16 +3,16 @@
 # no PATH do usuário.
 #
 # Uso rápido (sem clonar o repo):
-#   curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 #
 # Variáveis de ambiente reconhecidas:
 #   LUMINA_VERSION   — tag a instalar (ex: v0.3.1). Default: latest
 #   INSTALL_DIR      — diretório destino. Default: ~/.local/bin (fallback /usr/local/bin)
-#   LUMINA_REPO      — override do repo (owner/name). Default: menegas/lumina
+#   LUMINA_REPO      — override do repo (owner/name). Default: Felipe-Meneguzzi/lumina
 
 set -euo pipefail
 
-REPO="${LUMINA_REPO:-menegas/lumina}"
+REPO="${LUMINA_REPO:-Felipe-Meneguzzi/lumina}"
 VERSION="${LUMINA_VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-}"
 

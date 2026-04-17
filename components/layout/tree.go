@@ -1,6 +1,6 @@
 package layout
 
-import "github.com/menegas/lumina/msgs"
+import "github.com/Felipe-Meneguzzi/lumina/msgs"
 
 // PaneID uniquely identifies a LeafNode in the pane tree.
 type PaneID int

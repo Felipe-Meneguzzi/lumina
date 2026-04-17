@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/menegas/lumina/cli"
+	"github.com/Felipe-Meneguzzi/lumina/cli"
 )
 
 func TestEffectiveMaxPanes_DefaultsTo4(t *testing.T) {

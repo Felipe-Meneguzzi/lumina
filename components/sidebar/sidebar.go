@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 // alreadyAtRootDuration controls how long the status bar keeps showing the

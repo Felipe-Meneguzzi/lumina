@@ -1,6 +1,6 @@
 package layout
 
-import "github.com/menegas/lumina/msgs"
+import "github.com/Felipe-Meneguzzi/lumina/msgs"
 
 // PaneBounds returns the position and size of the pane with the given ID in
 // layout-local coordinates (0,0 = top-left of the layout's content area).

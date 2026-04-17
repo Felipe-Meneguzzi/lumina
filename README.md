@@ -5,7 +5,7 @@
 ## Instalação rápida
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 ```
 
 Detecta OS/arquitetura (Linux/macOS, amd64/arm64), baixa o binário da release mais
@@ -26,7 +26,7 @@ na versão mais recente.
 Alternativamente, a mesma linha do instalador também atualiza:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 ```
 
 Para saber qual versão está rodando agora:
@@ -148,7 +148,7 @@ Baixa o binário da release mais recente e instala em `~/.local/bin` (ou
 `/usr/local/bin`, se disponível):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 ```
 
 Variáveis de ambiente opcionais:
@@ -157,13 +157,13 @@ Variáveis de ambiente opcionais:
 |---|---|---|
 | `LUMINA_VERSION` | `latest` | Tag a instalar (ex: `v0.3.1`) |
 | `INSTALL_DIR`    | `~/.local/bin` | Diretório destino |
-| `LUMINA_REPO`    | `menegas/lumina` | Override de fork |
+| `LUMINA_REPO`    | `Felipe-Meneguzzi/lumina` | Override de fork |
 
 Exemplo fixando versão e diretório:
 
 ```bash
 LUMINA_VERSION=v0.3.1 INSTALL_DIR=/usr/local/bin \
-  curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 ```
 
 O script detecta OS (`linux` / `darwin`) e arquitetura (`amd64` / `arm64`), valida o
@@ -179,7 +179,7 @@ instalação não está no `PATH`.
 Requer Go 1.26+.
 
 ```bash
-git clone https://github.com/menegas/lumina.git
+git clone https://github.com/Felipe-Meneguzzi/lumina.git
 cd lumina
 go build -o lumina .
 ./lumina

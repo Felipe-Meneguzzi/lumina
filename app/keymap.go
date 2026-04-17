@@ -2,7 +2,7 @@ package app
 
 import (
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/menegas/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/config"
 )
 
 // KeyMap centralises all keybindings for Lumina.

@@ -3,9 +3,9 @@ package layout_test
 import (
 	"testing"
 
-	"github.com/menegas/lumina/components/layout"
-	"github.com/menegas/lumina/config"
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/components/layout"
+	"github.com/Felipe-Meneguzzi/lumina/config"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 func newTestLayout(t *testing.T) layout.Model {

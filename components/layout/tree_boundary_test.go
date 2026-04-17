@@ -3,7 +3,7 @@ package layout
 import (
 	"testing"
 
-	"github.com/menegas/lumina/msgs"
+	"github.com/Felipe-Meneguzzi/lumina/msgs"
 )
 
 // buildThreePaneTree builds Split(H,r1){ First: Split(H,r2){ First: leaf(1), Second: leaf(2) }, Second: leaf(3) }
