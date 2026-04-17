@@ -34,7 +34,7 @@ func (e entry) Title() string {
 }
 
 func (e entry) Description() string { return "" }
-func (e entry) FilterValue() string  { return e.name }
+func (e entry) FilterValue() string { return e.name }
 
 // Model is the Bubble Tea model for the sidebar file explorer.
 type Model struct {

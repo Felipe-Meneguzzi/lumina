@@ -2,9 +2,9 @@ package editor
 
 // Buffer holds the text content as a slice of lines and tracks cursor position.
 type Buffer struct {
-	lines  []string
-	row    int
-	col    int
+	lines []string
+	row   int
+	col   int
 }
 
 // NewBuffer creates a Buffer pre-populated with the given lines.

@@ -22,21 +22,24 @@ var (
 
 // Model is the Bubble Tea model for the terminal pane.
 type Model struct {
-	shell         string
-	shellOverride string // when non-empty, runs via `sh -c <override>` instead of the default shell
-	forceTheme    bool
-	ptyFile       *os.File
-	cmd           *exec.Cmd
-	vt            *vt.Emulator    // virtual terminal — handles all escape sequences
-	reservedKeys  map[string]bool // keys not to forward to PTY (global shortcuts)
-	width         int
-	height        int
-	focused       bool
-	closed        bool         // true when running without a live PTY (used in tests)
-	paneID        int          // identifies this terminal in multi-pane output routing
-	scrollOffset  int          // how many rows above the live view the user is currently looking at
-	state         *sharedState // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
-	copy          *copyState   // non-nil when the terminal is in tmux-style copy mode
+	shell          string
+	shellOverride  string // when non-empty, runs via `sh -c <override>` instead of the default shell
+	forceTheme     bool
+	mouseAutoCopy  bool   // copy to clipboard automatically on mouse release (config.mouse_auto_copy)
+	mouseSelMode   string // "linear" (notepad-style) or "block" (rectangular); default "linear"
+	ptyFile        *os.File
+	cmd            *exec.Cmd
+	vt             *vt.Emulator    // virtual terminal — handles all escape sequences
+	reservedKeys   map[string]bool // keys not to forward to PTY (global shortcuts)
+	width          int
+	height         int
+	focused        bool
+	closed         bool            // true when running without a live PTY (used in tests)
+	paneID         int             // identifies this terminal in multi-pane output routing
+	scrollOffset   int             // how many rows above the live view the user is currently looking at
+	state          *sharedState    // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
+	copy           *copyState      // non-nil when the terminal is in tmux-style copy mode
+	mouseSelection *mouseSelection // non-nil when a mouse drag selection is active or pending
 }
 
 // New creates a new terminal Model and starts the shell process.
@@ -56,6 +59,8 @@ func newModel(cfg config.Config, override string) (Model, error) {
 		shell:         cfg.Shell,
 		shellOverride: override,
 		forceTheme:    cfg.ForceShellTheme,
+		mouseAutoCopy: cfg.MouseAutoCopy,
+		mouseSelMode:  selectionMode(cfg.SelectionMode),
 		width:         80,
 		height:        24,
 		vt:            vt.NewEmulator(cols, rows),
@@ -230,6 +235,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgs.PaneFocusMsg:
 		m.focused = msg.Focused
+		if !msg.Focused {
+			m.mouseSelection = nil
+		}
 		return m, nil
 
 	case msgs.PtyInputMsg:
@@ -244,6 +252,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.MouseEnabled() && !m.InCopyMode() {
 			teaMouseToVT(m.vt, msg.Mouse)
 		}
+		return m, nil
+
+	case msgs.MouseSelectMsg:
+		switch msg.Mouse.Action {
+		case tea.MouseActionPress:
+			m.startMouseSelection(msg.Mouse.X, msg.Mouse.Y)
+		case tea.MouseActionMotion:
+			m.updateMouseSelection(msg.Mouse.X, msg.Mouse.Y)
+		case tea.MouseActionRelease:
+			return m, m.finalizeMouseSelection(msg.Mouse.X, msg.Mouse.Y, m.mouseAutoCopy)
+		}
+		return m, nil
+
+	case msgs.MouseSelectConfirmMsg:
+		return m, m.confirmMouseSelection()
+
+	case msgs.MouseSelectCancelMsg:
+		m.cancelMouseSelection()
 		return m, nil
 
 	case msgs.EnterCopyModeMsg:
@@ -269,6 +295,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.TerminalResizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.mouseSelection = nil // coordinates become stale after resize
 		innerCols := max(1, m.width-2)
 		innerRows := max(1, m.height-2)
 		m.vt.Resize(innerCols, innerRows)
@@ -313,11 +340,16 @@ func (m Model) View() string {
 	}
 	if m.copy != nil {
 		style = style.BorderForeground(lipgloss.Color("214")) // amber border in copy mode
+	} else if m.mouseSelection != nil {
+		style = style.BorderForeground(lipgloss.Color("75")) // blue border during mouse selection
 	}
 	var content string
-	if m.copy != nil {
+	switch {
+	case m.copy != nil:
 		content = m.renderCopyMode()
-	} else {
+	case m.mouseSelection != nil:
+		content = m.renderWithMouseSelection()
+	default:
 		content = m.renderViewport()
 	}
 	return style.Width(m.width - 2).Height(m.height - 2).Render(content)

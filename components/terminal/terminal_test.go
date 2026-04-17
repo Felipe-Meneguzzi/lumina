@@ -288,6 +288,34 @@ func TestCallbacks_BellCounter(t *testing.T) {
 	}
 }
 
+// TestEnterCopyMode_ClearsMouseSelection verifies the mutual-exclusion invariant:
+// entering copy mode must clear any active mouse selection.
+func TestEnterCopyMode_ClearsMouseSelection(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// Establish an active mouse selection via Press.
+	next, _ := m.Update(msgs.MouseSelectMsg{
+		Mouse: tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft},
+	})
+	m = next.(terminal.Model)
+
+	if !m.HasMouseSelection() {
+		t.Fatal("expected HasMouseSelection=true before entering copy mode")
+	}
+
+	// Enter copy mode.
+	next, _ = m.Update(msgs.EnterCopyModeMsg{})
+	m = next.(terminal.Model)
+
+	if !m.InCopyMode() {
+		t.Error("expected InCopyMode=true after EnterCopyModeMsg")
+	}
+	if m.HasMouseSelection() {
+		t.Error("expected HasMouseSelection=false: mouse selection must be cleared when copy mode is entered")
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

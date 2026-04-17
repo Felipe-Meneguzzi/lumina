@@ -30,7 +30,7 @@ type SplitDir int
 
 const (
 	SplitHorizontal SplitDir = iota // side by side
-	SplitVertical                    // stacked
+	SplitVertical                   // stacked
 )
 
 // FocusDir defines the direction of pane focus movement.
@@ -47,7 +47,7 @@ const (
 type ResizeDir int
 
 const (
-	ResizeGrow   ResizeDir = iota
+	ResizeGrow ResizeDir = iota
 	ResizeShrink
 )
 
@@ -185,4 +185,26 @@ type StatusBarNotifyMsg struct {
 	Text     string
 	Level    NotifyLevel
 	Duration time.Duration
+}
+
+// MouseSelectMsg routes a mouse event to a terminal pane for Lumina-side text
+// selection, bypassing PTY passthrough. X/Y in Mouse are pane-local coordinates
+// (0,0 = top-left content cell, border already subtracted).
+type MouseSelectMsg struct {
+	PaneID int
+	Mouse  tea.MouseMsg
+}
+
+// MouseSelectConfirmMsg confirms a pending mouse selection, copying the selected
+// text to the clipboard. Emitted by app.handleKey when the user presses 'y' and
+// the focused terminal has a pending selection (mouse_auto_copy=false).
+type MouseSelectConfirmMsg struct {
+	PaneID int
+}
+
+// MouseSelectCancelMsg discards a pending mouse selection without altering the
+// clipboard. Emitted by app.handleKey when the user presses 'esc' and the focused
+// terminal has a pending selection (mouse_auto_copy=false).
+type MouseSelectCancelMsg struct {
+	PaneID int
 }

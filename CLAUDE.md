@@ -13,6 +13,8 @@ independente, composto pelo `app.Model` raiz via delegação e mensagens tipadas
 - N/A (sem persistência nova) (003-ux-fixes-multiwindow)
 - Go 1.26 (já em uso no projeto — `go.mod`) + Bubble Tea, Lip Gloss, Bubbles, creack/pty, gopsutil/v3 (sem (004-cli-startup-flags)
 - N/A — flags são efêmeras e não alteram `config.toml` (004-cli-startup-flags)
+- Go 1.26 (já em uso — `go.mod`) + Bubble Tea, Lip Gloss, creack/pty, ultraviolet (charmbracelet/x/vt) — sem dependências novas (main)
+- `~/.config/lumina/config.toml` — novo campo `mouse_auto_copy bool` na struct `Config` (main)
 
 - **Language**: Go 1.26
 - **TUI Framework**: Bubble Tea + Lip Gloss + Bubbles (Charm ecosystem)
@@ -111,6 +113,6 @@ golangci-lint run
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- main: Added Go 1.26 (já em uso — `go.mod`) + Bubble Tea, Lip Gloss, creack/pty, ultraviolet (charmbracelet/x/vt) — sem dependências novas
 - 004-cli-startup-flags: Added Go 1.26 (já em uso no projeto — `go.mod`) + Bubble Tea, Lip Gloss, Bubbles, creack/pty, gopsutil/v3 (sem
 - 003-ux-fixes-multiwindow: Added Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3
-- 002-multiwindow: Novo package `components/layout/` com binary split tree (Hyprland-inspired)

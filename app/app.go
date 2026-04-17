@@ -251,25 +251,26 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	const borderTolerance = 1
 
-	// Mouse passthrough: when the focused terminal has put itself into a
-	// tracking mode (1000/1002/1003), forward events that land inside its
-	// content area (excluding border). Alt+wheel still wins so the user
-	// retains an escape hatch for our own scrollback UI.
-	if !msg.Alt && m.focus == focusContent && m.layout.FocusedMouseEnabled() {
+	// Terminal mouse handling: for focused terminal panes, decide between
+	// Lumina-side text selection and PTY passthrough.
+	//   - No PTY tracking, or Shift held → Lumina selection (MouseSelectMsg).
+	//   - PTY tracking active and no Shift → PTY passthrough (PtyMouseMsg).
+	// Alt events are excluded so Alt+wheel scrollback keeps priority.
+	if !msg.Alt && m.focus == focusContent && m.layout.FocusedKind() == layout.KindTerminal {
 		if px, py, pw, ph, ok := m.layout.FocusedBounds(); ok {
 			gx := msg.X - m.sidebarWidth
 			gy := msg.Y
-			// Subtract pane origin and 1 cell of border on each side.
 			localX := gx - px - 1
 			localY := gy - py - 1
 			if localX >= 0 && localY >= 0 && localX < pw-2 && localY < ph-2 {
 				inner := msg
 				inner.X = localX
 				inner.Y = localY
-				return m.updateLayout(msgs.PtyMouseMsg{
-					PaneID: int(m.layout.FocusedID()),
-					Mouse:  inner,
-				})
+				paneID := int(m.layout.FocusedID())
+				if !m.layout.FocusedMouseEnabled() || msg.Shift {
+					return m.updateLayout(msgs.MouseSelectMsg{PaneID: paneID, Mouse: inner})
+				}
+				return m.updateLayout(msgs.PtyMouseMsg{PaneID: paneID, Mouse: inner})
 			}
 		}
 	}
@@ -423,6 +424,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// nothing reaches the PTY until the user leaves the mode.
 		if m.layout.FocusedInCopyMode() {
 			return m.updateLayout(msg)
+		}
+		// Pending mouse selection (mouse_auto_copy=false): intercept 'y' to confirm
+		// and 'esc' to cancel. All other keys go to the PTY as usual.
+		if m.layout.FocusedHasPendingSelection() {
+			paneID := int(m.layout.FocusedID())
+			switch msg.String() {
+			case "y":
+				return m.updateLayout(msgs.MouseSelectConfirmMsg{PaneID: paneID})
+			case "esc":
+				return m.updateLayout(msgs.MouseSelectCancelMsg{PaneID: paneID})
+			}
 		}
 		// PgUp/PgDown drive the scrollback history instead of being forwarded.
 		switch msg.Type {

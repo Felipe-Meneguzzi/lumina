@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/menegas/lumina/msgs"
@@ -37,6 +37,7 @@ func (m *Model) enterCopyMode() {
 	if cols <= 0 || rows <= 0 {
 		return
 	}
+	m.mouseSelection = nil // enforce mutual exclusion with mouse selection
 	c := pos{x: cols - 1, y: rows - 1}
 	m.copy = &copyState{cursor: c, anchor: c}
 }

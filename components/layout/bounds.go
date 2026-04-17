@@ -57,6 +57,33 @@ func (m Model) FocusedInCopyMode() bool {
 	return false
 }
 
+// FocusedHasMouseSelection reports whether the focused terminal pane has an
+// active mouse selection (drag in progress or pending confirmation).
+func (m Model) FocusedHasMouseSelection() bool {
+	leaf := findLeaf(m.root, m.focused)
+	if leaf == nil || leaf.Kind != KindTerminal {
+		return false
+	}
+	if s, ok := leafInner(leaf).(interface{ HasMouseSelection() bool }); ok {
+		return s.HasMouseSelection()
+	}
+	return false
+}
+
+// FocusedHasPendingSelection reports whether the focused terminal pane has a
+// mouse selection that is waiting for explicit 'y' confirmation before being
+// copied (mouse_auto_copy=false path).
+func (m Model) FocusedHasPendingSelection() bool {
+	leaf := findLeaf(m.root, m.focused)
+	if leaf == nil || leaf.Kind != KindTerminal {
+		return false
+	}
+	if s, ok := leafInner(leaf).(interface{ HasPendingSelection() bool }); ok {
+		return s.HasPendingSelection()
+	}
+	return false
+}
+
 // FocusedCWD returns the OSC 7 working directory last reported by the focused
 // terminal's inner application. Empty for editors or terminals that haven't
 // reported.

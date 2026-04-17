@@ -229,6 +229,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.PtyMouseMsg:
 		return m.routePtyMouse(msg)
 
+	case msgs.MouseSelectMsg, msgs.MouseSelectConfirmMsg, msgs.MouseSelectCancelMsg:
+		return m.updateFocused(msg)
+
 	case msgs.EnterCopyModeMsg:
 		return m.updateFocused(msg)
 
