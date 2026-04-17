@@ -185,33 +185,64 @@ func closeLeafInner(n PaneNode, targetID PaneID) (PaneNode, *LeafNode) {
 	return n, nil
 }
 
-// adjustRatioAbsolute finds the nearest SplitNode containing targetID (matching axis)
-// and applies delta directly to its Ratio, always moving the boundary in the same
-// direction regardless of whether the target is First or Second.
-// Positive delta = boundary moves right/down (First grows); negative = left/up (First shrinks).
+// adjustRatioAbsolute moves the boundary that lies in the direction of delta relative
+// to the focused pane. Positive delta = boundary to the right/below; negative = left/above.
+// Only the nearest applicable split is adjusted — splits on the other side of the pane are
+// left untouched, fixing incorrect cascading in nested layouts.
+//
+// When the focused pane is at the edge of the layout (no boundary on the preferred side),
+// the opposite-side boundary is used instead so the key still has an effect (the pane shrinks
+// from its only available boundary).
 func adjustRatioAbsolute(root PaneNode, targetID PaneID, delta float64, axis msgs.ResizeAxis) PaneNode {
-	adjustRatioAbsoluteInner(root, targetID, delta, axis)
+	// Preferred side: for +delta the boundary is on the target's right/bottom (target in First);
+	// for -delta it is on the target's left/top (target in Second).
+	preferFirst := delta > 0
+	if _, applied := adjustRatioAbsoluteInner(root, targetID, delta, axis, preferFirst); applied {
+		return root
+	}
+	// Fallback: target sits at the edge (no preferred boundary). Use the opposite side.
+	adjustRatioAbsoluteInner(root, targetID, delta, axis, !preferFirst)
 	return root
 }
 
-func adjustRatioAbsoluteInner(n PaneNode, targetID PaneID, delta float64, axis msgs.ResizeAxis) bool {
+// adjustRatioAbsoluteInner returns (found, applied).
+// found: target was in this subtree.
+// applied: a ratio was already mutated; callers must not apply again.
+// applyOnFirst: if true, apply when target sits in a First subtree; otherwise apply when in Second.
+func adjustRatioAbsoluteInner(n PaneNode, targetID PaneID, delta float64, axis msgs.ResizeAxis, applyOnFirst bool) (bool, bool) {
 	switch v := n.(type) {
 	case *LeafNode:
-		return v.ID == targetID
+		return v.ID == targetID, false
 	case *SplitNode:
-		firstHas := adjustRatioAbsoluteInner(v.First, targetID, delta, axis)
-		secondHas := adjustRatioAbsoluteInner(v.Second, targetID, delta, axis)
-		if firstHas || secondHas {
-			splitMatchesAxis :=
-				(v.Direction == msgs.SplitHorizontal && axis == msgs.ResizeAxisH) ||
-					(v.Direction == msgs.SplitVertical && axis == msgs.ResizeAxisV)
-			if splitMatchesAxis {
-				v.Ratio = clampRatio(v.Ratio + delta)
+		splitMatchesAxis :=
+			(v.Direction == msgs.SplitHorizontal && axis == msgs.ResizeAxisH) ||
+				(v.Direction == msgs.SplitVertical && axis == msgs.ResizeAxisV)
+
+		firstFound, firstApplied := adjustRatioAbsoluteInner(v.First, targetID, delta, axis, applyOnFirst)
+		if firstFound {
+			if firstApplied {
+				return true, true
 			}
-			return true
+			if splitMatchesAxis && applyOnFirst {
+				v.Ratio = clampRatio(v.Ratio + delta)
+				return true, true
+			}
+			return true, false
+		}
+
+		secondFound, secondApplied := adjustRatioAbsoluteInner(v.Second, targetID, delta, axis, applyOnFirst)
+		if secondFound {
+			if secondApplied {
+				return true, true
+			}
+			if splitMatchesAxis && !applyOnFirst {
+				v.Ratio = clampRatio(v.Ratio + delta)
+				return true, true
+			}
+			return true, false
 		}
 	}
-	return false
+	return false, false
 }
 
 // adjustRatio adjusts the Ratio of the SplitNode that is the parent of the leaf
