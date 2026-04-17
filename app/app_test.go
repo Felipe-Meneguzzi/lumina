@@ -16,7 +16,7 @@ func newTestApp(t *testing.T) app.Model {
 		t.Fatalf("LoadKeybindings: %v", err)
 	}
 	cfg := config.Config{Shell: "/bin/sh", Keys: kb}
-	m, appErr := app.New(cfg)
+	m, appErr := app.New(cfg, nil)
 	if appErr != nil {
 		t.Fatalf("app.New: %v", appErr)
 	}

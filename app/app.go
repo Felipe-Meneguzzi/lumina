@@ -23,13 +23,13 @@ func shellEscape(path string) string {
 }
 
 const (
-	statusBarHeight  = 1
-	sidebarMinWidth  = 80 // hide sidebar below this total width
-	sidebarMinSize   = 16 // minimum sidebar width in columns
-	sidebarMaxRatio  = 3  // sidebar max = totalWidth / sidebarMaxRatio
-	sidebarStep      = 2  // columns per resize keypress
-	scrollPageStep   = 10 // rows per PgUp/PgDown in terminal scrollback
-	scrollWheelStep  = 3  // rows per mouse wheel tick in terminal scrollback
+	statusBarHeight = 1
+	sidebarMinWidth = 80 // hide sidebar below this total width
+	sidebarMinSize  = 16 // minimum sidebar width in columns
+	sidebarMaxRatio = 3  // sidebar max = totalWidth / sidebarMaxRatio
+	sidebarStep     = 2  // columns per resize keypress
+	scrollPageStep  = 10 // rows per PgUp/PgDown in terminal scrollback
+	scrollWheelStep = 3  // rows per mouse wheel tick in terminal scrollback
 )
 
 var confirmStyle = lipgloss.NewStyle().
@@ -45,6 +45,17 @@ const (
 	focusSidebar
 )
 
+// Option configures the app Model at construction time.
+type Option func(*Model)
+
+// WithNoSidebar hides the sidebar for all panes on startup.
+func WithNoSidebar() Option {
+	return func(m *Model) {
+		m.sidebarVisible = false
+		m.sidebarWidth = 0
+	}
+}
+
 // Model is the root Bubble Tea model that composes all panes.
 type Model struct {
 	keymap       KeyMap
@@ -58,7 +69,7 @@ type Model struct {
 	height       int
 	sidebarWidth int
 	showHelp     bool
-	confirmClose bool // waiting for user to confirm discarding unsaved changes
+	confirmClose bool   // waiting for user to confirm discarding unsaved changes
 	shell        string // active shell path, shown on startup notification
 	shellWarning string // non-empty if configured shell was rejected (e.g. .exe on WSL)
 
@@ -76,17 +87,13 @@ type Model struct {
 }
 
 // New initialises the application.
-func New(cfg config.Config) (Model, error) {
+func New(cfg config.Config, layoutOpts []layout.Option, appOpts ...Option) (Model, error) {
 	cwd, _ := os.Getwd()
 
-	lay, err := layout.New(cfg)
+	lay, err := layout.New(cfg, layoutOpts...)
 	if err != nil {
 		return Model{}, fmt.Errorf("creating layout: %w", err)
 	}
-	// Update reserved keys so the layout's terminal won't forward Alt+* shortcuts.
-	// (layout.New creates one terminal; its SetReservedKeys will be set via the
-	// terminal package's exported method once we expose it — for now the terminal
-	// reads reservedKeys from its own cfg.)
 
 	m := Model{
 		keymap:          NewKeyMap(cfg.Keys),
@@ -102,7 +109,16 @@ func New(cfg config.Config) (Model, error) {
 		shellWarning:    cfg.ShellWarning,
 		sidebarVisible:  true,
 		sbarVisible:     true,
-		paneShowSidebar: map[layout.PaneID]bool{1: true},
+		paneShowSidebar: map[layout.PaneID]bool{},
+	}
+
+	for _, opt := range appOpts {
+		opt(&m)
+	}
+
+	// Mark every pane produced by layout.New with the current sidebar visibility.
+	for _, id := range lay.AllPaneIDs() {
+		m.paneShowSidebar[id] = m.sidebarVisible
 	}
 	m.layout = m.layout.SetContentFocused(true)
 	return m, nil

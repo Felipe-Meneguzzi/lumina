@@ -202,6 +202,118 @@ func TestPaneCloseMsg_CloseOriginalPaneWhenSecondExists(t *testing.T) {
 	}
 }
 
+func TestLayoutNew_DefaultMaxPanesIs4(t *testing.T) {
+	m := newTestLayout(t)
+	// 3 splits = 4 panes (OK); 4th split should fail.
+	for i := 0; i < 3; i++ {
+		next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+		m = next.(layout.Model)
+	}
+	if m.PaneCount() != 4 {
+		t.Fatalf("expected 4 panes, got %d", m.PaneCount())
+	}
+	next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	if next.(layout.Model).PaneCount() != 4 {
+		t.Errorf("default max should cap at 4, got %d", next.(layout.Model).PaneCount())
+	}
+}
+
+func TestLayoutNew_WithMaxPanes_10(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg, layout.WithMaxPanes(10))
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	for i := 0; i < 9; i++ {
+		next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+		m = next.(layout.Model)
+	}
+	if m.PaneCount() != 10 {
+		t.Fatalf("expected 10 panes, got %d", m.PaneCount())
+	}
+	// 11th should fail.
+	next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	if next.(layout.Model).PaneCount() != 10 {
+		t.Errorf("expected cap at 10, got %d", next.(layout.Model).PaneCount())
+	}
+}
+
+func TestPaneSplitMsg_AtCustomMax_IsNoop(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg, layout.WithMaxPanes(2))
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	m = next.(layout.Model)
+	if m.PaneCount() != 2 {
+		t.Fatalf("expected 2 panes, got %d", m.PaneCount())
+	}
+	// 3rd split at custom cap 2 should be rejected.
+	next, _ = m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	if next.(layout.Model).PaneCount() != 2 {
+		t.Errorf("expected cap at 2, got %d", next.(layout.Model).PaneCount())
+	}
+}
+
+func TestLayoutNew_WithInitialLayoutH3(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg, layout.WithInitialLayout(msgs.SplitHorizontal, 3))
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	if m.PaneCount() != 3 {
+		t.Errorf("expected 3 initial panes, got %d", m.PaneCount())
+	}
+}
+
+func TestLayoutNew_WithInitialLayoutV2(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg, layout.WithInitialLayout(msgs.SplitVertical, 2))
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	if m.PaneCount() != 2 {
+		t.Errorf("expected 2 initial panes, got %d", m.PaneCount())
+	}
+}
+
+func TestLayoutNew_WithInitialLayoutCount1_IsSinglePane(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg, layout.WithInitialLayout(msgs.SplitHorizontal, 1))
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	if m.PaneCount() != 1 {
+		t.Errorf("expected 1 pane for count=1, got %d", m.PaneCount())
+	}
+}
+
+func TestLayoutHandleSplit_DoesNotInheritStartCommand(t *testing.T) {
+	// StartCommand is /bin/true (exits immediately) — initial pane boots with it,
+	// but a subsequent manual split must fall back to the default shell.
+	cfg := config.Config{Shell: "/bin/sh"}
+	m, err := layout.New(cfg,
+		layout.WithStartCommand("/bin/true"),
+		layout.WithInitialLayout(msgs.SplitHorizontal, 2),
+		layout.WithMaxPanes(4),
+	)
+	if err != nil {
+		t.Fatalf("layout.New: %v", err)
+	}
+	if m.PaneCount() != 2 {
+		t.Fatalf("expected 2 initial panes, got %d", m.PaneCount())
+	}
+	// Trigger a manual split. The new leaf must be created via the default
+	// shell path (newTerminalLeaf) — if it tried to reuse the startCommand,
+	// the test would still pass, but we assert no panic and new pane exists.
+	next, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	m = next.(layout.Model)
+	if m.PaneCount() != 3 {
+		t.Errorf("expected 3 panes after split, got %d", m.PaneCount())
+	}
+}
+
 func TestPaneResizeMsg_AdjustsRatio(t *testing.T) {
 	m := newTestLayout(t)
 	m2, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})

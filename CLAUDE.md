@@ -1,6 +1,6 @@
 # Lumina Development Guidelines
 
-Auto-generated from feature plan 001-lumina-core. Last updated: 2026-04-16
+Auto-generated from feature plan 001-lumina-core. Last updated: 2026-04-17
 
 ## Project Overview
 
@@ -11,6 +11,8 @@ independente, composto pelo `app.Model` raiz via delegação e mensagens tipadas
 ## Active Technologies
 - Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3 (003-ux-fixes-multiwindow)
 - N/A (sem persistência nova) (003-ux-fixes-multiwindow)
+- Go 1.26 (já em uso no projeto — `go.mod`) + Bubble Tea, Lip Gloss, Bubbles, creack/pty, gopsutil/v3 (sem (004-cli-startup-flags)
+- N/A — flags são efêmeras e não alteram `config.toml` (004-cli-startup-flags)
 
 - **Language**: Go 1.26
 - **TUI Framework**: Bubble Tea + Lip Gloss + Bubbles (Charm ecosystem)
@@ -109,6 +111,6 @@ golangci-lint run
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 004-cli-startup-flags: Added Go 1.26 (já em uso no projeto — `go.mod`) + Bubble Tea, Lip Gloss, Bubbles, creack/pty, gopsutil/v3 (sem
 - 003-ux-fixes-multiwindow: Added Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3
 - 002-multiwindow: Novo package `components/layout/` com binary split tree (Hyprland-inspired)
-- 002-multiwindow: `app.go` migrado para usar `layout.Model` (removidos campos `term`/`ed` diretos)

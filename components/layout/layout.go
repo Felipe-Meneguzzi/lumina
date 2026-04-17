@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	maxPanes  = 4
-	minPaneW  = 20
-	minPaneH  = 5
-	ratioStep = 0.05
+	defaultMaxPanes = 4
+	minPaneW        = 20
+	minPaneH        = 5
+	ratioStep       = 0.05
 )
 
 // ── Small interfaces to avoid type assertions on concrete types ──────────────
@@ -53,23 +53,67 @@ type Model struct {
 	width        int
 	height       int
 	cfg          config.Config
-	pendingClose bool // waiting for confirm-close of a dirty editor pane
+	pendingClose bool          // waiting for confirm-close of a dirty editor pane
+	maxPanes     int           // session ceiling; replaces former package const
+	startCommand string        // applied only to initial panes built in New; never propagated to splits
+	initialDir   msgs.SplitDir // set by WithInitialLayout; consumed by New then zeroed
+	initialCount int           // set by WithInitialLayout; >1 triggers pre-split
 }
 
-// New creates a layout with a single terminal pane.
-func New(cfg config.Config) (Model, error) {
-	m := Model{
-		nextID: 1,
-		width:  80,
-		height: 24,
-		cfg:    cfg,
+// Option configures a Model at construction time.
+type Option func(*Model)
+
+// WithMaxPanes overrides the session's pane ceiling (default 4).
+func WithMaxPanes(n int) Option {
+	return func(m *Model) {
+		if n > 0 {
+			m.maxPanes = n
+		}
 	}
-	leaf, err := newTerminalLeaf(1, cfg)
+}
+
+// WithStartCommand makes initial panes built by New run the given command
+// instead of the default shell. Panes created later via split always use
+// the default shell — this field is consumed only during initial tree build.
+func WithStartCommand(cmd string) Option {
+	return func(m *Model) { m.startCommand = cmd }
+}
+
+// WithInitialLayout requests that New pre-splits the root pane into `count`
+// panes with the given direction. count <= 1 is treated as "single pane"
+// (no-op). Only msgs.SplitHorizontal and msgs.SplitVertical are honored.
+func WithInitialLayout(dir msgs.SplitDir, count int) Option {
+	return func(m *Model) {
+		if count > 1 {
+			m.initialDir = dir
+			m.initialCount = count
+		}
+	}
+}
+
+// New creates a layout. With no opts, produces a single terminal pane —
+// preserving the historical single-pane boot.
+func New(cfg config.Config, opts ...Option) (Model, error) {
+	m := Model{
+		nextID:   1,
+		width:    80,
+		height:   24,
+		cfg:      cfg,
+		maxPanes: defaultMaxPanes,
+	}
+	for _, opt := range opts {
+		opt(&m)
+	}
+
+	root, lastID, err := buildInitialTree(&m)
 	if err != nil {
 		return m, fmt.Errorf("layout.New: %w", err)
 	}
-	m.root = leaf
-	m.focused = leaf.ID
+	m.root = root
+	m.focused = lastID
+	// Clear transient init fields so they cannot leak into runtime behaviour.
+	m.initialDir = msgs.SplitHorizontal
+	m.initialCount = 0
 	return m, nil
 }
 
@@ -77,6 +121,22 @@ func New(cfg config.Config) (Model, error) {
 // paneID is set before Init() to ensure the PTY read goroutine captures it.
 func newTerminalLeaf(id PaneID, cfg config.Config) (*LeafNode, error) {
 	t, err := terminal.New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	t.SetPaneID(int(id))
+	return &LeafNode{
+		ID:    id,
+		Kind:  KindTerminal,
+		Model: &leafModelAdapter{inner: t},
+	}, nil
+}
+
+// newTerminalLeafWithCommand is like newTerminalLeaf but runs the given command
+// instead of the default shell. Used only for initial panes created by
+// WithInitialLayout when WithStartCommand is also set.
+func newTerminalLeafWithCommand(id PaneID, cfg config.Config, command string) (*LeafNode, error) {
+	t, err := terminal.NewWithCommand(cfg, command)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +266,16 @@ func (m Model) FocusedKind() PaneKind {
 // FocusedID returns the PaneID of the currently focused pane.
 func (m Model) FocusedID() PaneID { return m.focused }
 
+// AllPaneIDs returns the IDs of every leaf pane in left-to-right / top-to-bottom order.
+func (m Model) AllPaneIDs() []PaneID {
+	leaves := allLeaves(m.root)
+	ids := make([]PaneID, 0, len(leaves))
+	for _, leaf := range leaves {
+		ids = append(ids, leaf.ID)
+	}
+	return ids
+}
+
 // SetContentFocused marks whether the layout's content area has app-level focus.
 func (m Model) SetContentFocused(active bool) Model {
 	m.applyFocus(m.focused, active)
@@ -328,8 +398,8 @@ func (m Model) routePtyMouse(msg msgs.PtyMouseMsg) (tea.Model, tea.Cmd) {
 
 // handleSplit splits the focused pane in the given direction.
 func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
-	if m.PaneCount() >= maxPanes {
-		return m, notifyStatus("Máximo de 4 painéis atingido", msgs.NotifyWarning)
+	if m.PaneCount() >= m.maxPanes {
+		return m, notifyStatus(fmt.Sprintf("Máximo de %d painéis atingido", m.maxPanes), msgs.NotifyWarning)
 	}
 	if dir == msgs.SplitHorizontal && m.width/2 < minPaneW {
 		return m, notifyStatus("Tela muito pequena para dividir horizontalmente", msgs.NotifyWarning)
@@ -348,7 +418,7 @@ func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
 
 	initCmd := leafInner(newLeaf).Init()
 	resizeCmd := m.propagateResize()
-	m.focused = m.nextID          // focus moves to the new pane
+	m.focused = m.nextID // focus moves to the new pane
 	m.applyFocus(m.nextID, true)
 
 	return m, tea.Batch(initCmd, resizeCmd)
