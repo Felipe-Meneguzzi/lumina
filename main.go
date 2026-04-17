@@ -53,7 +53,7 @@ func main() {
 	if overrides.FilePath != "" {
 		path := overrides.FilePath
 		initialCmd = func() tea.Msg {
-			return msgs.OpenFileMsg{Path: path}
+			return msgs.OpenInExternalEditorMsg{Path: path}
 		}
 	}
 

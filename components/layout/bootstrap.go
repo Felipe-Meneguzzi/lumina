@@ -37,5 +37,5 @@ func (m *Model) newInitialLeaf(id PaneID) (*LeafNode, error) {
 	if m.startCommand == "" {
 		return newTerminalLeaf(id, m.cfg)
 	}
-	return newTerminalLeafWithCommand(id, m.cfg, m.startCommand)
+	return newTerminalLeafWithCommand(id, m.cfg, m.startCommand, false)
 }

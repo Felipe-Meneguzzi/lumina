@@ -1,6 +1,6 @@
-// Package layout manages a binary split tree of panes (terminals and editors).
-// It implements tea.Model and is owned by app.Model, replacing the former
-// direct fields term/ed. Inspired by the Hyprland window manager's tiling model.
+// Package layout manages a binary split tree of panes.
+// It implements tea.Model and is owned by app.Model, routing messages to
+// the correct pane and handling split / close / focus-move operations.
 package layout
 
 import (
@@ -8,7 +8,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/menegas/lumina/components/editor"
 	"github.com/menegas/lumina/components/terminal"
 	"github.com/menegas/lumina/config"
 	"github.com/menegas/lumina/msgs"
@@ -28,9 +27,6 @@ type paneIDer interface{ PaneID() int }
 
 // resourceCloser is implemented by terminal.Model (value receiver).
 type resourceCloser interface{ CloseResources() }
-
-// dirtyChecker is implemented by editor.Model (value receiver).
-type dirtyChecker interface{ Dirty() bool }
 
 // ── leafModelAdapter ─────────────────────────────────────────────────────────
 
@@ -53,7 +49,6 @@ type Model struct {
 	width        int
 	height       int
 	cfg          config.Config
-	pendingClose bool          // waiting for confirm-close of a dirty editor pane
 	maxPanes     int           // session ceiling; replaces former package const
 	startCommand string        // applied only to initial panes built in New; never propagated to splits
 	initialDir   msgs.SplitDir // set by WithInitialLayout; consumed by New then zeroed
@@ -117,8 +112,8 @@ func New(cfg config.Config, opts ...Option) (Model, error) {
 	return m, nil
 }
 
-// newTerminalLeaf creates a LeafNode backed by a new terminal.Model.
-// paneID is set before Init() to ensure the PTY read goroutine captures it.
+// newTerminalLeaf creates a LeafNode backed by a new terminal.Model running the
+// default shell.
 func newTerminalLeaf(id PaneID, cfg config.Config) (*LeafNode, error) {
 	t, err := terminal.New(cfg)
 	if err != nil {
@@ -133,29 +128,23 @@ func newTerminalLeaf(id PaneID, cfg config.Config) (*LeafNode, error) {
 }
 
 // newTerminalLeafWithCommand is like newTerminalLeaf but runs the given command
-// instead of the default shell. Used only for initial panes created by
-// WithInitialLayout when WithStartCommand is also set.
-func newTerminalLeafWithCommand(id PaneID, cfg config.Config, command string) (*LeafNode, error) {
+// under `sh -c` instead of the default shell. When transient is true the pane
+// emits PaneAutoCloseMsg on PTY EOF so the layout can remove it without the
+// usual shell auto-restart.
+func newTerminalLeafWithCommand(id PaneID, cfg config.Config, command string, transient bool) (*LeafNode, error) {
 	t, err := terminal.NewWithCommand(cfg, command)
 	if err != nil {
 		return nil, err
 	}
 	t.SetPaneID(int(id))
+	if transient {
+		t.SetTransient(true)
+	}
 	return &LeafNode{
 		ID:    id,
 		Kind:  KindTerminal,
 		Model: &leafModelAdapter{inner: t},
 	}, nil
-}
-
-// newEditorLeaf creates a LeafNode backed by a new editor.Model.
-func newEditorLeaf(id PaneID, cfg config.Config) *LeafNode {
-	e := editor.New(cfg)
-	return &LeafNode{
-		ID:    id,
-		Kind:  KindEditor,
-		Model: &leafModelAdapter{inner: e},
-	}
 }
 
 // leafInner returns the inner tea.Model stored in the leaf's adapter.
@@ -196,10 +185,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.propagateResize()
 
 	case msgs.PaneSplitMsg:
-		return m.handleSplit(msg.Direction)
+		return m.handleSplit(msg)
 
 	case msgs.PaneCloseMsg:
 		return m.handleClose()
+
+	case msgs.PaneAutoCloseMsg:
+		return m.doCloseLeaf(PaneID(msg.PaneID))
 
 	case msgs.PaneFocusMoveMsg:
 		return m.handleFocusMove(msg.Direction)
@@ -207,33 +199,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgs.PaneResizeMsg:
 		return m.handlePaneResize(msg)
 
-	// Pane close confirmation flow.
-	case msgs.CloseConfirmedMsg:
-		if m.pendingClose {
-			m.pendingClose = false
-			return m.doCloseLeaf(m.focused)
-		}
-		return m.updateFocused(msg)
-
-	case msgs.CloseAbortedMsg:
-		m.pendingClose = false
-		return m, nil
-
 	case msgs.PtyOutputMsg:
 		return m.routePtyOutput(msg)
 
 	case msgs.PtyInputMsg:
-		// Input always routes to the focused terminal.
 		return m.updateFocused(msg)
 
 	case msgs.PtyMouseMsg:
 		return m.routePtyMouse(msg)
 
-	case msgs.EnterCopyModeMsg:
+	case msgs.MouseSelectMsg, msgs.MouseSelectConfirmMsg, msgs.MouseSelectCancelMsg:
 		return m.updateFocused(msg)
 
-	case msgs.OpenFileMsg:
-		return m.handleOpenFile(msg)
+	case msgs.EnterCopyModeMsg:
+		return m.updateFocused(msg)
 
 	case msgs.PaneFocusMsg:
 		m.applyFocus(m.focused, msg.Focused)
@@ -282,6 +261,17 @@ func (m Model) SetContentFocused(active bool) Model {
 	return m
 }
 
+// SetFocusedID updates the focused pane. Used by app.go after click-to-focus
+// hit-tests resolve which pane should receive input.
+func (m Model) SetFocusedID(id PaneID) Model {
+	if findLeaf(m.root, id) == nil {
+		return m
+	}
+	m.focused = id
+	m.applyFocus(id, true)
+	return m
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 // applyFocus sends PaneFocusMsg{Focused: true} to the focused leaf and
@@ -305,14 +295,7 @@ func (m Model) propagateResize() tea.Cmd {
 		if inner == nil {
 			return
 		}
-		var resizeMsg tea.Msg
-		switch leaf.Kind {
-		case KindTerminal:
-			resizeMsg = msgs.TerminalResizeMsg{Width: w, Height: h}
-		case KindEditor:
-			resizeMsg = msgs.EditorResizeMsg{Width: w, Height: h}
-		}
-		next, cmd := inner.Update(resizeMsg)
+		next, cmd := inner.Update(msgs.TerminalResizeMsg{Width: w, Height: h})
 		setLeafInner(leaf, next)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -396,8 +379,10 @@ func (m Model) routePtyMouse(msg msgs.PtyMouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleSplit splits the focused pane in the given direction.
-func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
+// handleSplit splits the focused pane in the given direction, optionally
+// running a specific command in the new pane (for external-editor spawns).
+func (m Model) handleSplit(msg msgs.PaneSplitMsg) (tea.Model, tea.Cmd) {
+	dir := msg.Direction
 	if m.PaneCount() >= m.maxPanes {
 		return m, notifyStatus(fmt.Sprintf("Máximo de %d painéis atingido", m.maxPanes), msgs.NotifyWarning)
 	}
@@ -409,7 +394,13 @@ func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
 	}
 
 	m.nextID++
-	newLeaf, err := newTerminalLeaf(m.nextID, m.cfg)
+	var newLeaf *LeafNode
+	var err error
+	if msg.Command != "" {
+		newLeaf, err = newTerminalLeafWithCommand(m.nextID, m.cfg, msg.Command, msg.Transient)
+	} else {
+		newLeaf, err = newTerminalLeaf(m.nextID, m.cfg)
+	}
 	if err != nil {
 		return m, notifyStatus("Erro ao criar terminal: "+err.Error(), msgs.NotifyError)
 	}
@@ -424,22 +415,10 @@ func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(initCmd, resizeCmd)
 }
 
-// handleClose closes the focused pane, requesting confirmation if the editor is dirty.
+// handleClose closes the focused pane.
 func (m Model) handleClose() (tea.Model, tea.Cmd) {
 	if m.PaneCount() <= 1 {
 		return m, notifyStatus("Não é possível fechar o único painel", msgs.NotifyWarning)
-	}
-	leaf := findLeaf(m.root, m.focused)
-	if leaf == nil {
-		return m, nil
-	}
-	if leaf.Kind == KindEditor {
-		if inner := leafInner(leaf); inner != nil {
-			if dc, ok := inner.(dirtyChecker); ok && dc.Dirty() {
-				m.pendingClose = true
-				return m, func() tea.Msg { return msgs.ConfirmCloseMsg{} }
-			}
-		}
 	}
 	return m.doCloseLeaf(m.focused)
 }
@@ -490,32 +469,6 @@ func (m Model) handlePaneResize(msg msgs.PaneResizeMsg) (tea.Model, tea.Cmd) {
 		m.root = adjustRatio(m.root, m.focused, delta, msg.Axis)
 	}
 	return m, m.propagateResize()
-}
-
-// handleOpenFile opens the file in the focused pane, converting a terminal to
-// an editor if necessary.
-func (m Model) handleOpenFile(msg msgs.OpenFileMsg) (tea.Model, tea.Cmd) {
-	leaf := findLeaf(m.root, m.focused)
-	if leaf == nil {
-		return m, nil
-	}
-	if leaf.Kind == KindTerminal {
-		if inner := leafInner(leaf); inner != nil {
-			if rc, ok := inner.(resourceCloser); ok {
-				rc.CloseResources()
-			}
-		}
-		leaf.Kind = KindEditor
-		setLeafInner(leaf, editor.New(m.cfg))
-	}
-	inner := leafInner(leaf)
-	if inner == nil {
-		return m, nil
-	}
-	next, cmd := inner.Update(msg)
-	setLeafInner(leaf, next)
-	m.applyFocus(m.focused, true)
-	return m, cmd
 }
 
 // notifyStatus returns a Cmd that emits a StatusBarNotifyMsg.

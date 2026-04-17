@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +14,11 @@ import (
 	"github.com/menegas/lumina/config"
 	"github.com/menegas/lumina/msgs"
 )
+
+// alreadyAtRootDuration controls how long the status bar keeps showing the
+// "Já na raiz" notification when the user hits Backspace at the configured
+// root (feature 006 / FR-009).
+const alreadyAtRootDuration = 2 * time.Second
 
 var (
 	focusedBorder   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62"))
@@ -34,7 +40,7 @@ func (e entry) Title() string {
 }
 
 func (e entry) Description() string { return "" }
-func (e entry) FilterValue() string  { return e.name }
+func (e entry) FilterValue() string { return e.name }
 
 // Model is the Bubble Tea model for the sidebar file explorer.
 type Model struct {
@@ -45,6 +51,8 @@ type Model struct {
 	focused    bool
 	width      int
 	height     int
+	keys       config.Keybindings
+	prompt     *createPrompt
 }
 
 // New creates a sidebar rooted at the given directory.
@@ -64,6 +72,7 @@ func New(root string, cfg config.Config) Model {
 		showHidden: cfg.ShowHidden,
 		width:      cfg.SidebarWidth,
 		height:     24,
+		keys:       cfg.Keys,
 	}
 	m.loadDir(root)
 	return m
@@ -75,8 +84,16 @@ func (m Model) Width() int { return m.width }
 // CWD returns the directory currently shown in the sidebar.
 func (m Model) CWD() string { return m.cwd }
 
+// Root returns the sidebar's configured root (the Lumina start directory).
+func (m Model) Root() string { return m.root }
+
 // SetFocused sets the focus state.
 func (m *Model) SetFocused(f bool) { m.focused = f }
+
+// PromptActive reports whether the inline create prompt is currently open.
+// Used by tests and by the app layer to skip unrelated key routing while the
+// user is typing a name.
+func (m Model) PromptActive() bool { return m.prompt != nil }
 
 func (m *Model) loadDir(dir string) {
 	entries, err := os.ReadDir(dir)
@@ -117,12 +134,45 @@ func (m Model) Init() tea.Cmd { return nil }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
+	case msgs.SidebarCreatedMsg:
+		// Refresh the listing so the new entry is visible and, for dirs,
+		// navigate into the newly created directory.
+		if msg.Kind == "dir" {
+			m.cwd = msg.Path
+			m.loadDir(msg.Path)
+		} else {
+			m.loadDir(m.cwd)
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if !m.focused {
 			return m, nil
 		}
+		// Inline create prompt consumes every key while active.
+		if m.prompt != nil {
+			next, cmd := m.prompt.Update(msg)
+			if next == nil {
+				m.prompt = nil
+				// Refresh listing after successful create.
+				m.loadDir(m.cwd)
+			} else {
+				m.prompt = next
+			}
+			return m, cmd
+		}
+		switch m.keys.Action(msg.String()) {
+		case "sidebar_new_dir":
+			m.prompt = newCreatePrompt("dir", m.cwd)
+			return m, nil
+		case "sidebar_new_file":
+			m.prompt = newCreatePrompt("file", m.cwd)
+			return m, nil
+		case "sidebar_parent":
+			return m.navigateParent()
+		}
 		switch msg.Type {
-		case tea.KeyEnter, tea.KeyRight:
+		case tea.KeyEnter:
 			if selected, ok := m.list.SelectedItem().(entry); ok {
 				info, err := fileInfo(selected.path)
 				if err != nil {
@@ -133,19 +183,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loadDir(selected.path)
 					return m, nil
 				}
-				return m, func() tea.Msg {
-					return msgs.OpenFileMsg{Path: selected.path}
-				}
+				path := selected.path
+				return m, func() tea.Msg { return msgs.OpenInExternalEditorMsg{Path: path} }
 			}
-
-		case tea.KeyLeft:
-			// Navigate up to parent directory.
-			parent := filepath.Dir(m.cwd)
-			if parent != m.cwd {
-				m.cwd = parent
-				m.loadDir(parent)
-			}
-			return m, nil
 		}
 
 	case msgs.SidebarResizeMsg:
@@ -160,6 +200,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// navigateParent moves the sidebar one directory up, stopping at the
+// configured root. When already at the root, emits a transient status-bar
+// notification without changing the sidebar state.
+func (m Model) navigateParent() (tea.Model, tea.Cmd) {
+	parent := filepath.Dir(m.cwd)
+	atRoot := parent == m.cwd || m.cwd == m.root
+	if atRoot {
+		return m, func() tea.Msg {
+			return msgs.StatusBarNotifyMsg{
+				Text:     "Já na raiz",
+				Level:    msgs.NotifyInfo,
+				Duration: alreadyAtRootDuration,
+			}
+		}
+	}
+	m.cwd = parent
+	m.loadDir(parent)
+	return m, nil
+}
+
 // View renders the sidebar pane.
 func (m Model) View() string {
 	if m.width == 0 {
@@ -169,7 +229,11 @@ func (m Model) View() string {
 	if m.focused {
 		style = focusedBorder
 	}
-	return style.Width(m.width - 2).Height(m.height - 2).Render(m.list.View())
+	content := m.list.View()
+	if m.prompt != nil {
+		content = m.prompt.View() + "\n" + content
+	}
+	return style.Width(m.width - 2).Height(m.height - 2).Render(content)
 }
 
 func max(a, b int) int {

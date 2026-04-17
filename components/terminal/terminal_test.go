@@ -288,6 +288,108 @@ func TestCallbacks_BellCounter(t *testing.T) {
 	}
 }
 
+// TestCursorGate_DiffersWithFocus asserts FR-003 (R3): the rendered viewport
+// of a focused pane must differ from the unfocused one in at least the cursor
+// cell. Both panes carry identical bytes so the only degree of freedom is the
+// cursor visual.
+func TestCursorGate_DiffersWithFocus(t *testing.T) {
+	mA := newTestModel(t)
+	mA.Close()
+	mB := newTestModel(t)
+	mB.Close()
+
+	// Feed identical content so the only variation is the cursor visual.
+	data := []byte("abc\n")
+	a, _ := mA.Update(msgs.PtyOutputMsg{Data: data})
+	b, _ := mB.Update(msgs.PtyOutputMsg{Data: data})
+	mA = a.(terminal.Model)
+	mB = b.(terminal.Model)
+
+	mA.SetFocused(true)
+	mB.SetFocused(false)
+
+	vA := mA.View()
+	vB := mB.View()
+	if vA == vB {
+		t.Errorf("expected focused and unfocused View() to differ (cursor gate); both=%q", vA)
+	}
+}
+
+// TestFirstRender_SetsFlagAndEmitsCmd verifies FR-001 / US1: the initial
+// TerminalResizeMsg flips firstRenderDone and returns a Cmd that starts
+// draining the PTY.
+func TestFirstRender_SetsFlagAndEmitsCmd(t *testing.T) {
+	m := newTestModel(t)
+	defer m.Close()
+	if m.FirstRenderDone() {
+		t.Fatal("expected firstRenderDone=false before any resize")
+	}
+	next, cmd := m.Update(msgs.TerminalResizeMsg{Width: 80, Height: 24})
+	nm := next.(terminal.Model)
+	if !nm.FirstRenderDone() {
+		t.Error("expected firstRenderDone=true after first TerminalResizeMsg")
+	}
+	if cmd == nil {
+		t.Error("expected non-nil Cmd to start PTY drain on first resize")
+	}
+}
+
+// TestBulkOutput_PreservesByteOrder feeds many PtyOutputMsg chunks with
+// distinct sentinel tokens and asserts they all land in the viewport in order.
+// Validates the coalescing design (research.md §R2) at the mechanism level —
+// bytes must never be lost or reordered regardless of batch size.
+func TestBulkOutput_PreservesByteOrder(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+	tokens := []string{"AAA", "BBB", "CCC", "DDD", "EEE"}
+	var cur terminal.Model = m
+	for _, tok := range tokens {
+		nxt, _ := cur.Update(msgs.PtyOutputMsg{Data: []byte(tok + "\n")})
+		cur = nxt.(terminal.Model)
+	}
+	v := cur.View()
+	lastIdx := -1
+	for _, tok := range tokens {
+		idx := strings.Index(v, tok)
+		if idx < 0 {
+			t.Errorf("expected %q present in View, got: %q", tok, v)
+			continue
+		}
+		if idx < lastIdx {
+			t.Errorf("token %q appeared before earlier token at idx %d (prev %d)", tok, idx, lastIdx)
+		}
+		lastIdx = idx
+	}
+}
+
+// TestEnterCopyMode_ClearsMouseSelection verifies the mutual-exclusion invariant:
+// entering copy mode must clear any active mouse selection.
+func TestEnterCopyMode_ClearsMouseSelection(t *testing.T) {
+	m := newTestModel(t)
+	m.Close()
+
+	// Establish an active mouse selection via Press.
+	next, _ := m.Update(msgs.MouseSelectMsg{
+		Mouse: tea.MouseMsg{X: 0, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft},
+	})
+	m = next.(terminal.Model)
+
+	if !m.HasMouseSelection() {
+		t.Fatal("expected HasMouseSelection=true before entering copy mode")
+	}
+
+	// Enter copy mode.
+	next, _ = m.Update(msgs.EnterCopyModeMsg{})
+	m = next.(terminal.Model)
+
+	if !m.InCopyMode() {
+		t.Error("expected InCopyMode=true after EnterCopyModeMsg")
+	}
+	if m.HasMouseSelection() {
+		t.Error("expected HasMouseSelection=false: mouse selection must be cleared when copy mode is entered")
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

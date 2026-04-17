@@ -51,6 +51,11 @@ type Keybindings struct {
 
 	// Terminal copy mode (tmux-style selection + OSC52 clipboard)
 	EnterCopyMode []string `json:"enter_copy_mode"`
+
+	// Sidebar file-manager actions (feature 006)
+	SidebarNewDir  []string `json:"sidebar_new_dir"`
+	SidebarNewFile []string `json:"sidebar_new_file"`
+	SidebarParent  []string `json:"sidebar_parent"`
 }
 
 func defaultKeybindings() Keybindings {
@@ -97,6 +102,11 @@ func defaultKeybindings() Keybindings {
 
 		// alt+y enters copy mode (tmux convention is prefix+[, but we have no prefix).
 		EnterCopyMode: []string{"alt+y"},
+
+		// Sidebar file-manager actions (feature 006)
+		SidebarNewDir:  []string{"alt+d"},
+		SidebarNewFile: []string{"alt+f"},
+		SidebarParent:  []string{"backspace"},
 	}
 }
 
@@ -124,96 +134,339 @@ func LoadKeybindings() (Keybindings, error) {
 	if err := json.Unmarshal(data, &partial); err != nil {
 		return kb, err
 	}
-	if len(partial.FocusTerminal) > 0    { kb.FocusTerminal    = partial.FocusTerminal    }
-	if len(partial.FocusSidebar) > 0     { kb.FocusSidebar     = partial.FocusSidebar     }
-	if len(partial.FocusEditor) > 0      { kb.FocusEditor      = partial.FocusEditor      }
-	if len(partial.OpenTerminalHere) > 0 { kb.OpenTerminalHere = partial.OpenTerminalHere }
-	if len(partial.Save) > 0             { kb.Save             = partial.Save             }
-	if len(partial.Quit) > 0             { kb.Quit             = partial.Quit             }
-	if len(partial.Help) > 0             { kb.Help             = partial.Help             }
-	if len(partial.SplitHorizontal) > 0  { kb.SplitHorizontal  = partial.SplitHorizontal  }
-	if len(partial.SplitVertical) > 0    { kb.SplitVertical    = partial.SplitVertical    }
-	if len(partial.ClosePane) > 0        { kb.ClosePane        = partial.ClosePane        }
-	if len(partial.FocusPaneLeft) > 0    { kb.FocusPaneLeft    = partial.FocusPaneLeft    }
-	if len(partial.FocusPaneRight) > 0   { kb.FocusPaneRight   = partial.FocusPaneRight   }
-	if len(partial.FocusPaneUp) > 0      { kb.FocusPaneUp      = partial.FocusPaneUp      }
-	if len(partial.FocusPaneDown) > 0    { kb.FocusPaneDown    = partial.FocusPaneDown    }
-	if len(partial.GrowPaneH) > 0        { kb.GrowPaneH        = partial.GrowPaneH        }
-	if len(partial.ShrinkPaneH) > 0      { kb.ShrinkPaneH      = partial.ShrinkPaneH      }
-	if len(partial.GrowPaneV) > 0        { kb.GrowPaneV        = partial.GrowPaneV        }
-	if len(partial.ShrinkPaneV) > 0      { kb.ShrinkPaneV      = partial.ShrinkPaneV      }
-	if len(partial.BoundaryRight) > 0    { kb.BoundaryRight    = partial.BoundaryRight    }
-	if len(partial.BoundaryLeft) > 0     { kb.BoundaryLeft     = partial.BoundaryLeft     }
-	if len(partial.BoundaryDown) > 0     { kb.BoundaryDown     = partial.BoundaryDown     }
-	if len(partial.BoundaryUp) > 0       { kb.BoundaryUp       = partial.BoundaryUp       }
-	if len(partial.GrowSidebar) > 0      { kb.GrowSidebar      = partial.GrowSidebar      }
-	if len(partial.ShrinkSidebar) > 0    { kb.ShrinkSidebar    = partial.ShrinkSidebar    }
-	if len(partial.ToggleSidebar) > 0    { kb.ToggleSidebar    = partial.ToggleSidebar    }
-	if len(partial.ToggleStatusBar) > 0  { kb.ToggleStatusBar  = partial.ToggleStatusBar  }
-	if len(partial.EnterCopyMode) > 0    { kb.EnterCopyMode    = partial.EnterCopyMode    }
+	if len(partial.FocusTerminal) > 0 {
+		kb.FocusTerminal = partial.FocusTerminal
+	}
+	if len(partial.FocusSidebar) > 0 {
+		kb.FocusSidebar = partial.FocusSidebar
+	}
+	if len(partial.FocusEditor) > 0 {
+		kb.FocusEditor = partial.FocusEditor
+	}
+	if len(partial.OpenTerminalHere) > 0 {
+		kb.OpenTerminalHere = partial.OpenTerminalHere
+	}
+	if len(partial.Save) > 0 {
+		kb.Save = partial.Save
+	}
+	if len(partial.Quit) > 0 {
+		kb.Quit = partial.Quit
+	}
+	if len(partial.Help) > 0 {
+		kb.Help = partial.Help
+	}
+	if len(partial.SplitHorizontal) > 0 {
+		kb.SplitHorizontal = partial.SplitHorizontal
+	}
+	if len(partial.SplitVertical) > 0 {
+		kb.SplitVertical = partial.SplitVertical
+	}
+	if len(partial.ClosePane) > 0 {
+		kb.ClosePane = partial.ClosePane
+	}
+	if len(partial.FocusPaneLeft) > 0 {
+		kb.FocusPaneLeft = partial.FocusPaneLeft
+	}
+	if len(partial.FocusPaneRight) > 0 {
+		kb.FocusPaneRight = partial.FocusPaneRight
+	}
+	if len(partial.FocusPaneUp) > 0 {
+		kb.FocusPaneUp = partial.FocusPaneUp
+	}
+	if len(partial.FocusPaneDown) > 0 {
+		kb.FocusPaneDown = partial.FocusPaneDown
+	}
+	if len(partial.GrowPaneH) > 0 {
+		kb.GrowPaneH = partial.GrowPaneH
+	}
+	if len(partial.ShrinkPaneH) > 0 {
+		kb.ShrinkPaneH = partial.ShrinkPaneH
+	}
+	if len(partial.GrowPaneV) > 0 {
+		kb.GrowPaneV = partial.GrowPaneV
+	}
+	if len(partial.ShrinkPaneV) > 0 {
+		kb.ShrinkPaneV = partial.ShrinkPaneV
+	}
+	if len(partial.BoundaryRight) > 0 {
+		kb.BoundaryRight = partial.BoundaryRight
+	}
+	if len(partial.BoundaryLeft) > 0 {
+		kb.BoundaryLeft = partial.BoundaryLeft
+	}
+	if len(partial.BoundaryDown) > 0 {
+		kb.BoundaryDown = partial.BoundaryDown
+	}
+	if len(partial.BoundaryUp) > 0 {
+		kb.BoundaryUp = partial.BoundaryUp
+	}
+	if len(partial.GrowSidebar) > 0 {
+		kb.GrowSidebar = partial.GrowSidebar
+	}
+	if len(partial.ShrinkSidebar) > 0 {
+		kb.ShrinkSidebar = partial.ShrinkSidebar
+	}
+	if len(partial.ToggleSidebar) > 0 {
+		kb.ToggleSidebar = partial.ToggleSidebar
+	}
+	if len(partial.ToggleStatusBar) > 0 {
+		kb.ToggleStatusBar = partial.ToggleStatusBar
+	}
+	if len(partial.EnterCopyMode) > 0 {
+		kb.EnterCopyMode = partial.EnterCopyMode
+	}
+	if len(partial.SidebarNewDir) > 0 {
+		kb.SidebarNewDir = partial.SidebarNewDir
+	}
+	if len(partial.SidebarNewFile) > 0 {
+		kb.SidebarNewFile = partial.SidebarNewFile
+	}
+	if len(partial.SidebarParent) > 0 {
+		kb.SidebarParent = partial.SidebarParent
+	}
 
 	return kb, nil
 }
 
 // Action returns the action name for a given key string, or "" if not bound.
 func (kb Keybindings) Action(key string) string {
-	for _, k := range kb.FocusTerminal    { if k == key { return "focus_terminal"      } }
-	for _, k := range kb.FocusSidebar     { if k == key { return "focus_sidebar"       } }
-	for _, k := range kb.FocusEditor      { if k == key { return "focus_editor"        } }
-	for _, k := range kb.OpenTerminalHere { if k == key { return "open_terminal_here"  } }
-	for _, k := range kb.Save             { if k == key { return "save"                } }
-	for _, k := range kb.Quit             { if k == key { return "quit"                } }
-	for _, k := range kb.Help             { if k == key { return "help"                } }
-	for _, k := range kb.SplitHorizontal  { if k == key { return "split_horizontal"    } }
-	for _, k := range kb.SplitVertical    { if k == key { return "split_vertical"      } }
-	for _, k := range kb.ClosePane        { if k == key { return "close_pane"          } }
-	for _, k := range kb.FocusPaneLeft    { if k == key { return "focus_pane_left"     } }
-	for _, k := range kb.FocusPaneRight   { if k == key { return "focus_pane_right"    } }
-	for _, k := range kb.FocusPaneUp      { if k == key { return "focus_pane_up"       } }
-	for _, k := range kb.FocusPaneDown    { if k == key { return "focus_pane_down"     } }
-	for _, k := range kb.GrowPaneH        { if k == key { return "grow_pane_h"         } }
-	for _, k := range kb.ShrinkPaneH      { if k == key { return "shrink_pane_h"       } }
-	for _, k := range kb.GrowPaneV        { if k == key { return "grow_pane_v"         } }
-	for _, k := range kb.ShrinkPaneV      { if k == key { return "shrink_pane_v"       } }
-	for _, k := range kb.BoundaryRight    { if k == key { return "boundary_right"      } }
-	for _, k := range kb.BoundaryLeft     { if k == key { return "boundary_left"       } }
-	for _, k := range kb.BoundaryDown     { if k == key { return "boundary_down"       } }
-	for _, k := range kb.BoundaryUp       { if k == key { return "boundary_up"         } }
-	for _, k := range kb.GrowSidebar      { if k == key { return "grow_sidebar"        } }
-	for _, k := range kb.ShrinkSidebar    { if k == key { return "shrink_sidebar"      } }
-	for _, k := range kb.ToggleSidebar    { if k == key { return "toggle_sidebar"      } }
-	for _, k := range kb.ToggleStatusBar  { if k == key { return "toggle_statusbar"    } }
-	for _, k := range kb.EnterCopyMode    { if k == key { return "enter_copy_mode"     } }
+	for _, k := range kb.FocusTerminal {
+		if k == key {
+			return "focus_terminal"
+		}
+	}
+	for _, k := range kb.FocusSidebar {
+		if k == key {
+			return "focus_sidebar"
+		}
+	}
+	for _, k := range kb.FocusEditor {
+		if k == key {
+			return "focus_editor"
+		}
+	}
+	for _, k := range kb.OpenTerminalHere {
+		if k == key {
+			return "open_terminal_here"
+		}
+	}
+	for _, k := range kb.Save {
+		if k == key {
+			return "save"
+		}
+	}
+	for _, k := range kb.Quit {
+		if k == key {
+			return "quit"
+		}
+	}
+	for _, k := range kb.Help {
+		if k == key {
+			return "help"
+		}
+	}
+	for _, k := range kb.SplitHorizontal {
+		if k == key {
+			return "split_horizontal"
+		}
+	}
+	for _, k := range kb.SplitVertical {
+		if k == key {
+			return "split_vertical"
+		}
+	}
+	for _, k := range kb.ClosePane {
+		if k == key {
+			return "close_pane"
+		}
+	}
+	for _, k := range kb.FocusPaneLeft {
+		if k == key {
+			return "focus_pane_left"
+		}
+	}
+	for _, k := range kb.FocusPaneRight {
+		if k == key {
+			return "focus_pane_right"
+		}
+	}
+	for _, k := range kb.FocusPaneUp {
+		if k == key {
+			return "focus_pane_up"
+		}
+	}
+	for _, k := range kb.FocusPaneDown {
+		if k == key {
+			return "focus_pane_down"
+		}
+	}
+	for _, k := range kb.GrowPaneH {
+		if k == key {
+			return "grow_pane_h"
+		}
+	}
+	for _, k := range kb.ShrinkPaneH {
+		if k == key {
+			return "shrink_pane_h"
+		}
+	}
+	for _, k := range kb.GrowPaneV {
+		if k == key {
+			return "grow_pane_v"
+		}
+	}
+	for _, k := range kb.ShrinkPaneV {
+		if k == key {
+			return "shrink_pane_v"
+		}
+	}
+	for _, k := range kb.BoundaryRight {
+		if k == key {
+			return "boundary_right"
+		}
+	}
+	for _, k := range kb.BoundaryLeft {
+		if k == key {
+			return "boundary_left"
+		}
+	}
+	for _, k := range kb.BoundaryDown {
+		if k == key {
+			return "boundary_down"
+		}
+	}
+	for _, k := range kb.BoundaryUp {
+		if k == key {
+			return "boundary_up"
+		}
+	}
+	for _, k := range kb.GrowSidebar {
+		if k == key {
+			return "grow_sidebar"
+		}
+	}
+	for _, k := range kb.ShrinkSidebar {
+		if k == key {
+			return "shrink_sidebar"
+		}
+	}
+	for _, k := range kb.ToggleSidebar {
+		if k == key {
+			return "toggle_sidebar"
+		}
+	}
+	for _, k := range kb.ToggleStatusBar {
+		if k == key {
+			return "toggle_statusbar"
+		}
+	}
+	for _, k := range kb.EnterCopyMode {
+		if k == key {
+			return "enter_copy_mode"
+		}
+	}
+	for _, k := range kb.SidebarNewDir {
+		if k == key {
+			return "sidebar_new_dir"
+		}
+	}
+	for _, k := range kb.SidebarNewFile {
+		if k == key {
+			return "sidebar_new_file"
+		}
+	}
+	for _, k := range kb.SidebarParent {
+		if k == key {
+			return "sidebar_parent"
+		}
+	}
 	return ""
 }
 
 // GlobalKeys returns all keys that must not be forwarded to the PTY.
 func (kb Keybindings) GlobalKeys() map[string]bool {
 	reserved := make(map[string]bool)
-	for _, k := range kb.FocusTerminal    { reserved[k] = true }
-	for _, k := range kb.FocusSidebar     { reserved[k] = true }
-	for _, k := range kb.FocusEditor      { reserved[k] = true }
-	for _, k := range kb.OpenTerminalHere { reserved[k] = true }
-	for _, k := range kb.SplitHorizontal  { reserved[k] = true }
-	for _, k := range kb.SplitVertical    { reserved[k] = true }
-	for _, k := range kb.ClosePane        { reserved[k] = true }
-	for _, k := range kb.FocusPaneLeft    { reserved[k] = true }
-	for _, k := range kb.FocusPaneRight   { reserved[k] = true }
-	for _, k := range kb.FocusPaneUp      { reserved[k] = true }
-	for _, k := range kb.FocusPaneDown    { reserved[k] = true }
-	for _, k := range kb.GrowPaneH        { reserved[k] = true }
-	for _, k := range kb.ShrinkPaneH      { reserved[k] = true }
-	for _, k := range kb.GrowPaneV        { reserved[k] = true }
-	for _, k := range kb.ShrinkPaneV      { reserved[k] = true }
-	for _, k := range kb.BoundaryRight    { reserved[k] = true }
-	for _, k := range kb.BoundaryLeft     { reserved[k] = true }
-	for _, k := range kb.BoundaryDown     { reserved[k] = true }
-	for _, k := range kb.BoundaryUp       { reserved[k] = true }
-	for _, k := range kb.GrowSidebar      { reserved[k] = true }
-	for _, k := range kb.ShrinkSidebar    { reserved[k] = true }
-	for _, k := range kb.ToggleSidebar    { reserved[k] = true }
-	for _, k := range kb.ToggleStatusBar  { reserved[k] = true }
-	for _, k := range kb.EnterCopyMode    { reserved[k] = true }
+	for _, k := range kb.FocusTerminal {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusSidebar {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusEditor {
+		reserved[k] = true
+	}
+	for _, k := range kb.OpenTerminalHere {
+		reserved[k] = true
+	}
+	for _, k := range kb.SplitHorizontal {
+		reserved[k] = true
+	}
+	for _, k := range kb.SplitVertical {
+		reserved[k] = true
+	}
+	for _, k := range kb.ClosePane {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusPaneLeft {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusPaneRight {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusPaneUp {
+		reserved[k] = true
+	}
+	for _, k := range kb.FocusPaneDown {
+		reserved[k] = true
+	}
+	for _, k := range kb.GrowPaneH {
+		reserved[k] = true
+	}
+	for _, k := range kb.ShrinkPaneH {
+		reserved[k] = true
+	}
+	for _, k := range kb.GrowPaneV {
+		reserved[k] = true
+	}
+	for _, k := range kb.ShrinkPaneV {
+		reserved[k] = true
+	}
+	for _, k := range kb.BoundaryRight {
+		reserved[k] = true
+	}
+	for _, k := range kb.BoundaryLeft {
+		reserved[k] = true
+	}
+	for _, k := range kb.BoundaryDown {
+		reserved[k] = true
+	}
+	for _, k := range kb.BoundaryUp {
+		reserved[k] = true
+	}
+	for _, k := range kb.GrowSidebar {
+		reserved[k] = true
+	}
+	for _, k := range kb.ShrinkSidebar {
+		reserved[k] = true
+	}
+	for _, k := range kb.ToggleSidebar {
+		reserved[k] = true
+	}
+	for _, k := range kb.ToggleStatusBar {
+		reserved[k] = true
+	}
+	for _, k := range kb.EnterCopyMode {
+		reserved[k] = true
+	}
+	for _, k := range kb.SidebarNewDir {
+		reserved[k] = true
+	}
+	for _, k := range kb.SidebarNewFile {
+		reserved[k] = true
+	}
+	// Note: SidebarParent (backspace) is intentionally NOT reserved globally —
+	// backspace must reach the PTY when a terminal is focused. The sidebar
+	// consumes it only when the sidebar itself holds focus.
 	return reserved
 }
 

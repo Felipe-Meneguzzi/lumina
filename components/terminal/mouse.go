@@ -25,6 +25,12 @@ type sharedState struct {
 	cwd string
 	// Number of bell characters received since startup.
 	bellCount int
+	// cursorHidden tracks DECTCEM (?25l / ?25h). Starts false (cursor visible).
+	cursorHidden bool
+}
+
+func (s *sharedState) cursorVisible() bool {
+	return s == nil || !s.cursorHidden
 }
 
 func (s *sharedState) MouseEnabled() bool {
@@ -95,6 +101,7 @@ func installCallbacks(e *vt.Emulator, state *sharedState) {
 		Title:            func(s string) { state.title = s },
 		WorkingDirectory: func(s string) { state.cwd = decodeCWD(s) },
 		Bell:             func() { state.bellCount++ },
+		CursorVisibility: func(visible bool) { state.cursorHidden = !visible },
 	})
 }
 

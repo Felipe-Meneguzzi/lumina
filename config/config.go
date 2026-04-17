@@ -19,6 +19,9 @@ type Config struct {
 	SidebarWidth    int         `toml:"sidebar_width"` // columns
 	Theme           string      `toml:"theme"`
 	ForceShellTheme bool        `toml:"force_shell_theme"` // inject Lumina's default prompt into spawned shells
+	MouseAutoCopy   bool        `toml:"mouse_auto_copy"`   // copy to clipboard automatically on mouse release
+	SelectionMode   string      `toml:"selection_mode"`    // "linear" (notepad-style, default) or "block" (rectangular)
+	Editor          string      `toml:"editor"`            // external editor invoked by the sidebar ("nano"|"vim"|"nvim"|abs path)
 	Keys            Keybindings `toml:"-"`                 // loaded separately from keybindings.json
 	ShellWarning    string      `toml:"-"`                 // set when configured shell was rejected
 }
@@ -68,6 +71,9 @@ func defaults() Config {
 		SidebarWidth:    30,
 		Theme:           "default",
 		ForceShellTheme: true,
+		MouseAutoCopy:   true,
+		SelectionMode:   "linear",
+		Editor:          "nano",
 	}
 }
 
@@ -108,6 +114,13 @@ func LoadConfig() (Config, error) {
 		if requested != "" && requested != cfg.Shell && isWindowsExecutable(requested) {
 			// Store the warning so app.go can display it in the status bar on startup.
 			cfg.ShellWarning = "WSL: shell '" + requested + "' é um binário Windows — usando " + cfg.Shell
+		}
+		// Empty `editor` value is treated as absent (falls back to "nano").
+		// Non-empty values are preserved as-is — PATH resolution happens at spawn
+		// time (app.go openInExternalEditor); missing binaries surface as a
+		// StatusBarNotifyMsg, never as a silent rewrite to the default.
+		if strings.TrimSpace(cfg.Editor) == "" {
+			cfg.Editor = "nano"
 		}
 	}
 

@@ -6,11 +6,12 @@ import "github.com/menegas/lumina/msgs"
 type PaneID int
 
 // PaneKind identifies the type of content in a leaf pane.
+// After feature 006 (external editor) only KindTerminal is produced at runtime;
+// the enum is retained for forward compatibility.
 type PaneKind int
 
 const (
 	KindTerminal PaneKind = iota
-	KindEditor
 )
 
 // PaneNode is the interface implemented by both SplitNode and LeafNode.
