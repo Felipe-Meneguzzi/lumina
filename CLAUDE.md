@@ -15,6 +15,8 @@ independente, composto pelo `app.Model` raiz via delegação e mensagens tipadas
 - N/A — flags são efêmeras e não alteram `config.toml` (004-cli-startup-flags)
 - Go 1.26 (já em uso — `go.mod`) + Bubble Tea, Lip Gloss, creack/pty, ultraviolet (charmbracelet/x/vt) — sem dependências novas (main)
 - `~/.config/lumina/config.toml` — novo campo `mouse_auto_copy bool` na struct `Config` (main)
+- Go 1.26.1 (conforme `go.mod`) + Bubble Tea v1.3.10, Lip Gloss v1.1.0, Bubbles v1.0.0, charmbracelet/ultraviolet + x/vt (emulação de terminal), creack/pty v1.1.24, gopsutil/v3 v3.24.5, BurntSushi/toml v1.6.0 (006-ux-polish-pack)
+- `~/.config/lumina/config.toml` (novos campos `editor string`, opcionais); `~/.config/lumina/keybindings.json` (novas bindings para click-focus, alt+d, alt+f, backspace) (006-ux-polish-pack)
 
 - **Language**: Go 1.26
 - **TUI Framework**: Bubble Tea + Lip Gloss + Bubbles (Charm ecosystem)
@@ -113,6 +115,6 @@ golangci-lint run
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 006-ux-polish-pack: Added Go 1.26.1 (conforme `go.mod`) + Bubble Tea v1.3.10, Lip Gloss v1.1.0, Bubbles v1.0.0, charmbracelet/ultraviolet + x/vt (emulação de terminal), creack/pty v1.1.24, gopsutil/v3 v3.24.5, BurntSushi/toml v1.6.0
 - main: Added Go 1.26 (já em uso — `go.mod`) + Bubble Tea, Lip Gloss, creack/pty, ultraviolet (charmbracelet/x/vt) — sem dependências novas
 - 004-cli-startup-flags: Added Go 1.26 (já em uso no projeto — `go.mod`) + Bubble Tea, Lip Gloss, Bubbles, creack/pty, gopsutil/v3 (sem
-- 003-ux-fixes-multiwindow: Added Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3

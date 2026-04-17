@@ -12,7 +12,6 @@ type FocusTarget int
 const (
 	FocusTerminal FocusTarget = iota
 	FocusSidebar
-	FocusEditor
 	FocusLayout // layout manager holds focus (content area with multiple panes)
 )
 
@@ -96,13 +95,23 @@ type PtyMouseMsg struct {
 // mode (interactive selection + OSC52 clipboard).
 type EnterCopyModeMsg struct{}
 
-// PaneSplitMsg requests splitting the active pane.
+// PaneSplitMsg requests splitting the active pane. When Command is non-empty
+// the new pane runs that command (under `sh -c`) instead of the default shell
+// and, if Transient is true, closes the pane when the command exits.
 type PaneSplitMsg struct {
 	Direction SplitDir
+	Command   string // optional: run this command instead of the default shell
+	Transient bool   // when true, close the pane when the command exits (no shell restart)
 }
 
 // PaneCloseMsg requests closing the active pane.
 type PaneCloseMsg struct{}
+
+// PaneAutoCloseMsg requests closing a specific pane whose PTY process exited.
+// Emitted by transient terminal panes when the command completes.
+type PaneAutoCloseMsg struct {
+	PaneID int
+}
 
 // PaneFocusMoveMsg requests moving focus to a neighbouring pane.
 type PaneFocusMoveMsg struct {
@@ -145,40 +154,20 @@ type SidebarResizeMsg struct {
 	Height int
 }
 
-// EditorResizeMsg propagates computed editor pane dimensions.
-type EditorResizeMsg struct {
-	Width  int
-	Height int
-}
-
 // StatusBarResizeMsg propagates the full window width to the status bar.
 type StatusBarResizeMsg struct {
 	Width int
 }
 
 // MetricsTickMsg carries a snapshot of system metrics collected in the background.
+// CWD and git branch are now carried per-pane via PaneCWDChangeMsg/PaneGitStateMsg
+// and consolidated into FocusedPaneContextMsg.
 type MetricsTickMsg struct {
-	CPU       float64
-	MemUsed   uint64
-	MemTotal  uint64
-	CWD       string
-	GitBranch string
-	Tick      time.Time
+	CPU      float64
+	MemUsed  uint64
+	MemTotal uint64
+	Tick     time.Time
 }
-
-// OpenFileMsg requests that the editor open the given file path.
-type OpenFileMsg struct {
-	Path string
-}
-
-// ConfirmCloseMsg is emitted by the editor when it has unsaved changes and close is requested.
-type ConfirmCloseMsg struct{}
-
-// CloseConfirmedMsg is emitted by app after the user confirms discarding unsaved changes.
-type CloseConfirmedMsg struct{}
-
-// CloseAbortedMsg is emitted by app when the user cancels the close confirmation.
-type CloseAbortedMsg struct{}
 
 // StatusBarNotifyMsg requests a temporary notification in the status bar.
 type StatusBarNotifyMsg struct {
@@ -207,4 +196,75 @@ type MouseSelectConfirmMsg struct {
 // terminal has a pending selection (mouse_auto_copy=false).
 type MouseSelectCancelMsg struct {
 	PaneID int
+}
+
+// ── Feature 006 (UX Polish Pack) ─────────────────────────────────────────────
+
+// ClickFocusMsg is emitted by the app layer after hit-testing a mouse press
+// event against the current layout.Tree. It carries the identity of the pane
+// the click landed in plus the (x, y) coordinates translated into that pane's
+// local content-cell space (0,0 = first cell inside the pane's border).
+type ClickFocusMsg struct {
+	PaneID int
+	Target FocusTarget
+	LocalX int
+	LocalY int
+}
+
+// SidebarCreateMsg confirms the user has typed a name in the sidebar create
+// prompt and pressed Enter. The sidebar component handles the actual filesystem
+// mutation in its own Update; this message exists primarily for test feed-in
+// and for cross-component observability.
+type SidebarCreateMsg struct {
+	Kind      string // "dir" or "file"
+	Name      string // raw user input, already trimmed
+	ParentDir string // absolute path where the creation will happen
+}
+
+// SidebarCreatedMsg announces a successful filesystem creation via the sidebar.
+// If Kind == "file", the app layer reacts by opening the file in the external
+// editor (emitting OpenInExternalEditorMsg). If Kind == "dir", the sidebar
+// itself enters the new directory.
+type SidebarCreatedMsg struct {
+	Kind string // "dir" or "file"
+	Path string // absolute path of the newly created entry
+}
+
+// OpenInExternalEditorMsg requests that the app spawn a terminal pane running
+// the configured external editor (cfg.Editor) with the given file path as its
+// single argument.
+type OpenInExternalEditorMsg struct {
+	Path string
+}
+
+// ClockTickMsg is emitted by a 30s tea.Tick scheduled in statusbar.Init.
+// The statusbar updates its displayed HH:MM and re-arms the tick.
+type ClockTickMsg struct {
+	Now time.Time
+}
+
+// PaneCWDChangeMsg is emitted by a terminal pane when its OSC 7 callback
+// detects a current-working-directory announcement from the child shell.
+type PaneCWDChangeMsg struct {
+	PaneID int
+	CWD    string // absolute path, percent-decoded
+}
+
+// PaneGitStateMsg carries the result of a background git query for a pane
+// (triggered by PaneCWDChangeMsg). Branch is empty when the CWD is not a git
+// repository; Dirty is false in that case as well.
+type PaneGitStateMsg struct {
+	PaneID int
+	Branch string
+	Dirty  bool
+}
+
+// FocusedPaneContextMsg reaches the statusbar whenever the focused pane's
+// identity or context changes. It is the ONLY channel through which the
+// statusbar learns about branch/CWD.
+type FocusedPaneContextMsg struct {
+	PaneID    int
+	CWD       string // empty if unknown
+	GitBranch string // empty if not a git repo
+	GitDirty  bool
 }

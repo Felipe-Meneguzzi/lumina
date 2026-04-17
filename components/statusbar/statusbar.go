@@ -2,7 +2,6 @@ package statusbar
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -14,10 +13,17 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
+// clockInterval is the cadence of the HH:MM ticker. A 30-second interval keeps
+// SC-006 (max 60s drift) comfortably met without waking the event loop more
+// than necessary.
+const clockInterval = 30 * time.Second
+
 var (
 	barStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	notifyStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("214")).Bold(true)
 	errStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("196")).Bold(true)
+	dirtyStyle  = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("214")).Bold(true)
+	cleanStyle  = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("42")).Bold(true)
 )
 
 type notification struct {
@@ -32,8 +38,10 @@ type Model struct {
 	cpu       float64
 	memUsed   uint64
 	memTotal  uint64
-	cwd       string
-	gitBranch string
+	now       time.Time
+	cwd       string // derived from FocusedPaneContextMsg
+	gitBranch string // derived from FocusedPaneContextMsg (empty = no git)
+	gitDirty  bool
 	width     int
 	notify    *notification
 }
@@ -43,11 +51,15 @@ func New(cfg config.Config) Model {
 	return Model{
 		interval: time.Duration(cfg.MetricsInterval) * time.Millisecond,
 		width:    80,
+		now:      time.Now(),
 	}
 }
 
 // Width returns the current render width.
 func (m Model) Width() int { return m.width }
+
+// ClockInterval returns the cadence of the statusbar clock tick (exported for tests).
+func ClockInterval() time.Duration { return clockInterval }
 
 func tickMetrics(interval time.Duration) tea.Cmd {
 	return tea.Tick(interval, func(t time.Time) tea.Msg {
@@ -62,29 +74,31 @@ func tickMetrics(interval time.Duration) tea.Cmd {
 			memTotal = vm.Total
 		}
 
-		branch := gitBranch()
-
 		return msgs.MetricsTickMsg{
-			CPU:       cpuPct,
-			MemUsed:   memUsed,
-			MemTotal:  memTotal,
-			GitBranch: branch,
-			Tick:      t,
+			CPU:      cpuPct,
+			MemUsed:  memUsed,
+			MemTotal: memTotal,
+			Tick:     t,
 		}
 	})
 }
 
-func gitBranch() string {
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+// tickClock re-emits a ClockTickMsg every clockInterval seconds. The first
+// emission is immediate so the HH:MM value shows up on the very first frame
+// after Init rather than after the first 30s interval.
+func tickClock() tea.Cmd {
+	return tea.Tick(clockInterval, func(t time.Time) tea.Msg {
+		return msgs.ClockTickMsg{Now: t}
+	})
 }
 
-// Init starts the metrics tick.
+// Init starts the metrics + clock tickers. The clock fires immediately to
+// populate the HH:MM field before the first 30s elapses.
 func (m Model) Init() tea.Cmd {
-	return tickMetrics(m.interval)
+	return tea.Batch(
+		tickMetrics(m.interval),
+		func() tea.Msg { return msgs.ClockTickMsg{Now: time.Now()} },
+	)
 }
 
 // Update handles messages for the status bar.
@@ -95,17 +109,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cpu = msg.CPU
 		m.memUsed = msg.MemUsed
 		m.memTotal = msg.MemTotal
-		if msg.GitBranch != "" {
-			m.gitBranch = msg.GitBranch
-		}
-		if msg.CWD != "" {
-			m.cwd = msg.CWD
-		}
 		// Clear expired notifications.
 		if m.notify != nil && time.Now().After(m.notify.expires) {
 			m.notify = nil
 		}
 		return m, tickMetrics(m.interval)
+
+	case msgs.ClockTickMsg:
+		m.now = msg.Now
+		return m, tickClock()
+
+	case msgs.FocusedPaneContextMsg:
+		m.cwd = msg.CWD
+		m.gitBranch = msg.GitBranch
+		m.gitDirty = msg.GitDirty
+		return m, nil
 
 	case msgs.StatusBarNotifyMsg:
 		m.notify = &notification{
@@ -136,17 +154,30 @@ func (m Model) View() string {
 	memGB := float64(m.memUsed) / (1024 * 1024 * 1024)
 	totalGB := float64(m.memTotal) / (1024 * 1024 * 1024)
 
+	// Clock segment goes first, then metrics, then focused-pane context.
+	clock := m.now.Format("15:04")
 	var parts []string
-	parts = append(parts, fmt.Sprintf(" CPU: %.1f%%", m.cpu))
+	parts = append(parts, " "+clock)
+	parts = append(parts, fmt.Sprintf("CPU: %.1f%%", m.cpu))
 	parts = append(parts, fmt.Sprintf("MEM: %.1f/%.1fGB", memGB, totalGB))
-	if m.gitBranch != "" {
-		parts = append(parts, fmt.Sprintf("[%s]", m.gitBranch))
-	}
 	if m.cwd != "" {
 		parts = append(parts, m.cwd)
 	}
 
-	line := strings.Join(parts, "  ") + " "
+	line := strings.Join(parts, "  ")
+
+	// Git segment rendered with dedicated style for the glyph.
+	if m.gitBranch != "" {
+		glyph := "✓"
+		style := cleanStyle
+		if m.gitDirty {
+			glyph = "●"
+			style = dirtyStyle
+		}
+		gitSeg := fmt.Sprintf("  %s %s", m.gitBranch, glyph)
+		line += style.Render(gitSeg)
+	}
+
 	runes := []rune(line)
 	if len(runes) > m.width && m.width > 3 {
 		line = string(runes[:m.width-3]) + "..."

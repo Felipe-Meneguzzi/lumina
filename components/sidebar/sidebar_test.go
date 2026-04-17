@@ -14,36 +14,34 @@ import (
 func newTestModel(t *testing.T) sidebar.Model {
 	t.Helper()
 	root := t.TempDir()
-	// Create test file structure.
-	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(root, "subdir"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "subdir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return sidebar.New(root, config.Config{ShowHidden: false, SidebarWidth: 30})
+	kb, _ := config.LoadKeybindings()
+	return sidebar.New(root, config.Config{ShowHidden: false, SidebarWidth: 30, Keys: kb})
 }
 
-func TestUpdate_EnterOnFile_EmitsOpenFileMsg(t *testing.T) {
+func TestUpdate_EnterOnFile_EmitsOpenInExternalEditorMsg(t *testing.T) {
 	m := newTestModel(t)
 	m.SetFocused(true)
 
-	// Navigate to file (index 0 is "file.txt" or "subdir" depending on sort).
-	// We just press Enter on whatever is selected and check for OpenFileMsg.
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	next, cmd := m.Update(enterMsg)
 	_ = next
 
 	if cmd == nil {
-		t.Skip("no cmd returned; item may be a dir — acceptable in test environment")
+		t.Skip("no cmd returned; selected item may be a dir — acceptable")
 	}
 
 	result := cmd()
 	switch result.(type) {
-	case msgs.OpenFileMsg:
+	case msgs.OpenInExternalEditorMsg:
 		// Expected for file selection.
 	default:
-		// May be other msgs if the selected item is a dir — acceptable.
+		// Acceptable when the sorted-first item is a dir (subdir before file.txt).
 	}
 }
 
@@ -69,4 +67,26 @@ func TestView_ZeroWidth_ReturnsEmpty(t *testing.T) {
 
 func TestModel_ImplementsTeaModel(t *testing.T) {
 	var _ tea.Model = newTestModel(t)
+}
+
+// TestBackspaceAtRoot_EmitsAlreadyAtRoot verifies FR-009 behaviour: pressing
+// Backspace when the sidebar is already at its configured root surfaces a
+// transient "Já na raiz" notification instead of moving up.
+func TestBackspaceAtRoot_EmitsAlreadyAtRoot(t *testing.T) {
+	m := newTestModel(t)
+	m.SetFocused(true)
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	_ = next
+	if cmd == nil {
+		t.Fatal("expected a Cmd from Backspace at root, got nil")
+	}
+	msg := cmd()
+	n, ok := msg.(msgs.StatusBarNotifyMsg)
+	if !ok {
+		t.Fatalf("expected StatusBarNotifyMsg, got %T", msg)
+	}
+	if n.Text != "Já na raiz" {
+		t.Errorf("unexpected text: %q", n.Text)
+	}
 }

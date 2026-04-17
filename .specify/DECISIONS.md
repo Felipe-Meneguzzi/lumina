@@ -74,6 +74,26 @@ Lumina é um editor de terminal estilo VSCode — uma TUI (Terminal User Interfa
 
 ---
 
+### 8. UX Polish Pack — remoção do editor embutido e pipeline de contexto do pane focado (feature 006-ux-polish-pack)
+
+**Decisão:** (a) Remover `components/editor/` por completo e roteá-lo para editores externos via PTY; (b) introduzir o pipeline `PaneCWDChangeMsg → PaneGitStateMsg → FocusedPaneContextMsg` em substituição aos campos `CWD`/`GitBranch` em `MetricsTickMsg`; (c) adicionar o campo `Editor string` ao `config.Config`.
+
+**Justificativa:**
+- Editor externo elimina uma superfície de bugs grande (buffer próprio, confirm-close, save) aproveitando o ciclo de vida natural do PTY — `exec.LookPath(cfg.Editor)` decide o spawn, editor fechado = pane fechado.
+- Status bar passa a refletir o **pane focado**, não o processo Lumina — antes o git branch/CWD vinha do diretório do próprio binário, causando o bug "branch errado ao alternar panes". A nova cadeia é event-driven: OSC 7 detectado no stream do PTY → query git com timeout de 200 ms → consolidação em `FocusedPaneContextMsg` emitido pelo `app` a cada troca de foco.
+- `Editor` default `"nano"`, `LoadConfig` trata string vazia como ausente, e um binário fora do PATH **não** é silenciosamente reescrito — a resolução fica para o `openInExternalEditor` e a falha surge como `StatusBarNotifyMsg{Level: NotifyError}`.
+
+**Impacto em msgs/msgs.go:**
+- Novos: `ClickFocusMsg`, `SidebarCreateMsg`, `SidebarCreatedMsg`, `OpenInExternalEditorMsg`, `ClockTickMsg`, `PaneCWDChangeMsg`, `PaneGitStateMsg`, `FocusedPaneContextMsg`.
+- Removidos: `EditorResizeMsg`, `ConfirmCloseMsg`, `CloseConfirmedMsg`, `CloseAbortedMsg`, e o valor `FocusEditor` do enum `FocusTarget`.
+- `MetricsTickMsg` perde `CWD` e `GitBranch` — responsabilidade migrou para o pipeline acima.
+
+**Constituição:** Breaking change em `msgs/msgs.go` (remoção de tipos e enum value). O componente é interno e a transição se deu em um único PR, portanto documentamos aqui em vez de bumpar MINOR (feature se comporta como refactor interno).
+
+**Data:** 2026-04-17
+
+---
+
 ## Estrutura de Diretórios Definida
 
 ```

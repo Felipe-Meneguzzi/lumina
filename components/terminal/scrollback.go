@@ -18,6 +18,23 @@ const scrollbackMax = 2000
 // can see prior output.
 func (m Model) renderViewport() string {
 	if m.scrollOffset <= 0 || m.vt.IsAltScreen() {
+		if m.focused && m.state.cursorVisible() {
+			pos := m.vt.CursorPosition()
+			cols, rows := m.vt.Width(), m.vt.Height()
+			sbLen := m.vt.ScrollbackLen()
+			var out strings.Builder
+			for y := 0; y < rows; y++ {
+				cursorX := -1
+				if y == pos.Y {
+					cursorX = pos.X
+				}
+				writeRow(&out, m.vt, sbLen+y, sbLen, cols, cursorX)
+				if y < rows-1 {
+					out.WriteByte('\n')
+				}
+			}
+			return out.String()
+		}
 		return m.vt.Render()
 	}
 	cols, rows := m.vt.Width(), m.vt.Height()
@@ -30,10 +47,25 @@ func (m Model) renderViewport() string {
 	// Combined indices: [sbStart..sbLen) = scrollback, [sbLen..sbLen+rows) = live rows.
 	sbStart := sbLen - offset
 
+	cursorViewRow := -1
+	cursorX := -1
+	if m.focused && m.state.cursorVisible() {
+		pos := m.vt.CursorPosition()
+		combined := sbLen + pos.Y
+		if combined >= sbStart && combined < sbStart+rows {
+			cursorViewRow = combined - sbStart
+			cursorX = pos.X
+		}
+	}
+
 	var out strings.Builder
 	for i := 0; i < rows; i++ {
 		idx := sbStart + i
-		writeRow(&out, m.vt, idx, sbLen, cols)
+		cx := -1
+		if i == cursorViewRow {
+			cx = cursorX
+		}
+		writeRow(&out, m.vt, idx, sbLen, cols, cx)
 		if i < rows-1 {
 			out.WriteByte('\n')
 		}
@@ -43,7 +75,8 @@ func (m Model) renderViewport() string {
 
 // writeRow appends a single row's worth of styled cells to out. When idx is
 // below sbLen the row comes from scrollback; otherwise from the live screen.
-func writeRow(out *strings.Builder, e vtReader, idx, sbLen, cols int) {
+// cursorX is the column to render as a block cursor (-1 = no cursor).
+func writeRow(out *strings.Builder, e vtReader, idx, sbLen, cols, cursorX int) {
 	for x := 0; x < cols; x++ {
 		var cell *uv.Cell
 		if idx < sbLen {
@@ -51,14 +84,21 @@ func writeRow(out *strings.Builder, e vtReader, idx, sbLen, cols int) {
 		} else {
 			cell = e.CellAt(x, idx-sbLen)
 		}
-		if cell == nil || cell.Content == "" {
-			out.WriteByte(' ')
-			continue
+		content := " "
+		if cell != nil && cell.Content != "" {
+			content = cell.Content
 		}
-		if cell.Style.IsZero() {
-			out.WriteString(cell.Content)
+		if x == cursorX {
+			cs := uv.Style{}
+			if cell != nil {
+				cs = cell.Style
+			}
+			cs.Attrs |= uv.AttrReverse
+			out.WriteString(cs.Styled(content))
+		} else if cell != nil && !cell.Style.IsZero() {
+			out.WriteString(cell.Style.Styled(content))
 		} else {
-			out.WriteString(cell.Style.Styled(cell.Content))
+			out.WriteString(content)
 		}
 	}
 }
@@ -93,6 +133,12 @@ type altScreenReader interface {
 // scrollDelta applies a positive (into history) or negative (toward live)
 // change to the current scroll offset, clamping to [0, ScrollbackLen()].
 func (m *Model) scrollDelta(delta int) {
+	// Alt-screen apps (vim, claude, htop) own the full viewport; scrollback
+	// doesn't apply and attempting to scroll would corrupt the offset used
+	// when returning to the main screen.
+	if m.vt.IsAltScreen() {
+		return
+	}
 	m.scrollOffset += delta
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0

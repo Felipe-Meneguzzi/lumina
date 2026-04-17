@@ -51,6 +51,11 @@ type Keybindings struct {
 
 	// Terminal copy mode (tmux-style selection + OSC52 clipboard)
 	EnterCopyMode []string `json:"enter_copy_mode"`
+
+	// Sidebar file-manager actions (feature 006)
+	SidebarNewDir  []string `json:"sidebar_new_dir"`
+	SidebarNewFile []string `json:"sidebar_new_file"`
+	SidebarParent  []string `json:"sidebar_parent"`
 }
 
 func defaultKeybindings() Keybindings {
@@ -97,6 +102,11 @@ func defaultKeybindings() Keybindings {
 
 		// alt+y enters copy mode (tmux convention is prefix+[, but we have no prefix).
 		EnterCopyMode: []string{"alt+y"},
+
+		// Sidebar file-manager actions (feature 006)
+		SidebarNewDir:  []string{"alt+d"},
+		SidebarNewFile: []string{"alt+f"},
+		SidebarParent:  []string{"backspace"},
 	}
 }
 
@@ -204,6 +214,15 @@ func LoadKeybindings() (Keybindings, error) {
 	}
 	if len(partial.EnterCopyMode) > 0 {
 		kb.EnterCopyMode = partial.EnterCopyMode
+	}
+	if len(partial.SidebarNewDir) > 0 {
+		kb.SidebarNewDir = partial.SidebarNewDir
+	}
+	if len(partial.SidebarNewFile) > 0 {
+		kb.SidebarNewFile = partial.SidebarNewFile
+	}
+	if len(partial.SidebarParent) > 0 {
+		kb.SidebarParent = partial.SidebarParent
 	}
 
 	return kb, nil
@@ -346,6 +365,21 @@ func (kb Keybindings) Action(key string) string {
 			return "enter_copy_mode"
 		}
 	}
+	for _, k := range kb.SidebarNewDir {
+		if k == key {
+			return "sidebar_new_dir"
+		}
+	}
+	for _, k := range kb.SidebarNewFile {
+		if k == key {
+			return "sidebar_new_file"
+		}
+	}
+	for _, k := range kb.SidebarParent {
+		if k == key {
+			return "sidebar_parent"
+		}
+	}
 	return ""
 }
 
@@ -424,6 +458,15 @@ func (kb Keybindings) GlobalKeys() map[string]bool {
 	for _, k := range kb.EnterCopyMode {
 		reserved[k] = true
 	}
+	for _, k := range kb.SidebarNewDir {
+		reserved[k] = true
+	}
+	for _, k := range kb.SidebarNewFile {
+		reserved[k] = true
+	}
+	// Note: SidebarParent (backspace) is intentionally NOT reserved globally —
+	// backspace must reach the PTY when a terminal is focused. The sidebar
+	// consumes it only when the sidebar itself holds focus.
 	return reserved
 }
 

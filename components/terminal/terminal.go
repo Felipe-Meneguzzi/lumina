@@ -22,24 +22,27 @@ var (
 
 // Model is the Bubble Tea model for the terminal pane.
 type Model struct {
-	shell          string
-	shellOverride  string // when non-empty, runs via `sh -c <override>` instead of the default shell
-	forceTheme     bool
-	mouseAutoCopy  bool   // copy to clipboard automatically on mouse release (config.mouse_auto_copy)
-	mouseSelMode   string // "linear" (notepad-style) or "block" (rectangular); default "linear"
-	ptyFile        *os.File
-	cmd            *exec.Cmd
-	vt             *vt.Emulator    // virtual terminal — handles all escape sequences
-	reservedKeys   map[string]bool // keys not to forward to PTY (global shortcuts)
-	width          int
-	height         int
-	focused        bool
-	closed         bool            // true when running without a live PTY (used in tests)
-	paneID         int             // identifies this terminal in multi-pane output routing
-	scrollOffset   int             // how many rows above the live view the user is currently looking at
-	state          *sharedState    // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
-	copy           *copyState      // non-nil when the terminal is in tmux-style copy mode
-	mouseSelection *mouseSelection // non-nil when a mouse drag selection is active or pending
+	shell           string
+	shellOverride   string // when non-empty, runs via `sh -c <override>` instead of the default shell
+	forceTheme      bool
+	mouseAutoCopy   bool   // copy to clipboard automatically on mouse release (config.mouse_auto_copy)
+	mouseSelMode    string // "linear" (notepad-style) or "block" (rectangular); default "linear"
+	ptyFile         *os.File
+	cmd             *exec.Cmd
+	vt              *vt.Emulator    // virtual terminal — handles all escape sequences
+	reservedKeys    map[string]bool // keys not to forward to PTY (global shortcuts)
+	width           int
+	height          int
+	focused         bool
+	closed          bool            // true when running without a live PTY (used in tests)
+	paneID          int             // identifies this terminal in multi-pane output routing
+	scrollOffset    int             // how many rows above the live view the user is currently looking at
+	state           *sharedState    // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
+	copy            *copyState      // non-nil when the terminal is in tmux-style copy mode
+	mouseSelection  *mouseSelection // non-nil when a mouse drag selection is active or pending
+	transient       bool            // when true, emit PaneAutoCloseMsg on PTY EOF instead of restarting the shell
+	firstRenderDone bool            // set after the first TerminalResizeMsg applies pty.Setsize (feature 006 / US1)
+	lastCWD         string          // last CWD observed via OSC 7; used to emit PaneCWDChangeMsg on change
 }
 
 // New creates a new terminal Model and starts the shell process.
@@ -118,6 +121,14 @@ func (m Model) PaneID() int { return m.paneID }
 // Called once at startup with the keys loaded from keybindings.json.
 func (m *Model) SetReservedKeys(keys map[string]bool) { m.reservedKeys = keys }
 
+// SetTransient marks the terminal as running a one-shot command whose exit
+// should close the pane instead of auto-restarting the shell. Set before Init.
+func (m *Model) SetTransient(t bool) { m.transient = t }
+
+// FirstRenderDone reports whether the initial pty.Setsize has been applied.
+// Exported for unit tests asserting the cold-start repaint flow (US1).
+func (m Model) FirstRenderDone() bool { return m.firstRenderDone }
+
 // Dimensions returns the current width and height of the terminal pane.
 func (m Model) Dimensions() (int, int) { return m.width, m.height }
 
@@ -171,11 +182,17 @@ func setEnv(env []string, key, value string) []string {
 	return append(env, prefix+value)
 }
 
+// readBufSize is the PTY read chunk size. Sized at 64 KiB so that high-rate
+// output (build logs, stream-paste, `yes` test patterns) packs many lines into
+// a single PtyOutputMsg, amortising Update/render cost and keeping the render
+// loop under the 16 ms budget (feature 006 / SC-002 and constitution §IV).
+const readBufSize = 64 * 1024
+
 // waitForOutput returns a Cmd that reads one chunk from the PTY.
 // paneID is captured by value so the goroutine always uses the correct identifier.
 func waitForOutput(f *os.File, paneID int) tea.Cmd {
 	return func() tea.Msg {
-		buf := make([]byte, 4096)
+		buf := make([]byte, readBufSize)
 		n, err := f.Read(buf)
 		if n > 0 {
 			return msgs.PtyOutputMsg{PaneID: paneID, Data: buf[:n], Err: err}
@@ -184,13 +201,12 @@ func waitForOutput(f *os.File, paneID int) tea.Cmd {
 	}
 }
 
-// Init starts reading from the PTY.
-func (m Model) Init() tea.Cmd {
-	if m.closed || m.ptyFile == nil {
-		return nil
-	}
-	return waitForOutput(m.ptyFile, m.paneID)
-}
+// Init defers PTY reads until the first TerminalResizeMsg applies pty.Setsize
+// with the true pane dimensions. Without this gate, child processes that emit
+// a rich header at startup (e.g. Claude Code) paint against the default 78×22
+// and the resulting cells misalign when the real resize arrives afterwards
+// (feature 006 / US1).
+func (m Model) Init() tea.Cmd { return nil }
 
 // Update handles messages for the terminal pane.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -198,15 +214,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgs.PtyOutputMsg:
 		if msg.Err != nil {
-			// Shell exited — auto-restart (FR-010).
-			// The previous emulator's InputPipe goroutine already exited because
-			// its PTY was closed, so we just discard it and start fresh.
+			// Transient panes (external-editor spawns, etc.) close the pane when
+			// the command exits instead of auto-restarting a shell.
+			if m.transient {
+				paneID := m.paneID
+				return m, func() tea.Msg { return msgs.PaneAutoCloseMsg{PaneID: paneID} }
+			}
+			// Shell exited — auto-restart. The previous emulator's InputPipe
+			// goroutine already exited because its PTY was closed, so we just
+			// discard it and start fresh.
 			cols, rows := m.vt.Width(), m.vt.Height()
 			m.vt = vt.NewEmulator(cols, rows)
 			m.vt.SetScrollbackSize(scrollbackMax)
 			*m.state = sharedState{}
 			installCallbacks(m.vt, m.state)
 			m.scrollOffset = 0
+			m.firstRenderDone = false
+			m.lastCWD = ""
 			if err := m.startShell(); err != nil {
 				return m, nil
 			}
@@ -217,9 +241,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// selecting) — preserve their viewing position by tracking how many lines
 		// were pushed into scrollback by this write.
 		prevSBLen := m.vt.ScrollbackLen()
+		prevIsAltScreen := m.vt.IsAltScreen()
 		freezeView := m.scrollOffset > 0 || m.copy != nil
 		_, _ = m.vt.Write(msg.Data)
-		if freezeView {
+		// When an alt-screen app (claude, vim, htop, …) enters or exits, reset the
+		// scroll position to the live view. While in alt-screen the main-screen
+		// scrollback offset is irrelevant; if we let it grow during the session and
+		// then restore it on exit the user would land on stale history instead of
+		// the current prompt.
+		if m.vt.IsAltScreen() != prevIsAltScreen {
+			m.scrollOffset = 0
+		} else if freezeView && !m.vt.IsAltScreen() {
 			pushed := m.vt.ScrollbackLen() - prevSBLen
 			if pushed > 0 {
 				m.scrollOffset += pushed
@@ -228,10 +260,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sbLen := m.vt.ScrollbackLen(); m.scrollOffset > sbLen {
 			m.scrollOffset = sbLen
 		}
-		if m.ptyFile != nil {
-			return m, waitForOutput(m.ptyFile, m.paneID)
+		// Emit PaneCWDChangeMsg when the OSC 7 callback recorded a new CWD.
+		var extraCmds []tea.Cmd
+		if m.state != nil && m.state.cwd != m.lastCWD {
+			m.lastCWD = m.state.cwd
+			paneID := m.paneID
+			cwd := m.state.cwd
+			extraCmds = append(extraCmds, func() tea.Msg { return msgs.PaneCWDChangeMsg{PaneID: paneID, CWD: cwd} })
 		}
-		return m, nil
+		if m.ptyFile != nil {
+			extraCmds = append(extraCmds, waitForOutput(m.ptyFile, m.paneID))
+		}
+		return m, tea.Batch(extraCmds...)
 
 	case msgs.PaneFocusMsg:
 		m.focused = msg.Focused
@@ -325,6 +365,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Rows: uint16(innerRows),
 				Cols: uint16(innerCols),
 			})
+		}
+		// First resize after boot: the PTY dimensions are now authoritative, so
+		// CLIs that render a rich header at startup paint correctly. Start
+		// draining the PTY only now (feature 006 / US1).
+		if !m.firstRenderDone {
+			m.firstRenderDone = true
+			if m.ptyFile != nil {
+				return m, waitForOutput(m.ptyFile, m.paneID)
+			}
 		}
 		return m, nil
 	}

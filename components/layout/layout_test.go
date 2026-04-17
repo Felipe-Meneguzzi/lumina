@@ -314,6 +314,61 @@ func TestLayoutHandleSplit_DoesNotInheritStartCommand(t *testing.T) {
 	}
 }
 
+// TestHitTest_SinglePane verifies that HitTest resolves a click landing inside
+// a single-pane layout to that pane, with local coordinates offset by the
+// border (1,1 → 0,0 local).
+func TestHitTest_SinglePane(t *testing.T) {
+	m := newTestLayout(t)
+	next, _ := m.Update(msgs.LayoutResizeMsg{Width: 80, Height: 24})
+	m = next.(layout.Model)
+
+	paneID, _, lx, ly, ok := m.HitTest(5, 3)
+	if !ok {
+		t.Fatal("expected HitTest to succeed inside the pane")
+	}
+	if paneID != m.FocusedID() {
+		t.Errorf("expected focused pane %v, got %v", m.FocusedID(), paneID)
+	}
+	if lx != 4 || ly != 2 {
+		t.Errorf("expected local (4,2) after border subtraction, got (%d,%d)", lx, ly)
+	}
+}
+
+// TestHitTest_HorizontalSplit verifies that HitTest selects the correct side
+// of a horizontal split based on X coordinate.
+func TestHitTest_HorizontalSplit(t *testing.T) {
+	m := newTestLayout(t)
+	next, _ := m.Update(msgs.LayoutResizeMsg{Width: 100, Height: 30})
+	m = next.(layout.Model)
+	next, _ = m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+	m = next.(layout.Model)
+
+	// Click on the LEFT half.
+	leftID, _, _, _, ok := m.HitTest(10, 5)
+	if !ok {
+		t.Fatal("expected hit on left pane")
+	}
+	// Click on the RIGHT half.
+	rightID, _, _, _, ok := m.HitTest(90, 5)
+	if !ok {
+		t.Fatal("expected hit on right pane")
+	}
+	if leftID == rightID {
+		t.Errorf("expected different pane IDs for left/right, got both=%v", leftID)
+	}
+}
+
+// TestHitTest_OutOfBounds returns ok=false for coordinates outside the layout.
+func TestHitTest_OutOfBounds(t *testing.T) {
+	m := newTestLayout(t)
+	next, _ := m.Update(msgs.LayoutResizeMsg{Width: 80, Height: 24})
+	m = next.(layout.Model)
+
+	if _, _, _, _, ok := m.HitTest(200, 200); ok {
+		t.Error("expected HitTest to fail for out-of-bounds click")
+	}
+}
+
 func TestPaneResizeMsg_AdjustsRatio(t *testing.T) {
 	m := newTestLayout(t)
 	m2, _ := m.Update(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})

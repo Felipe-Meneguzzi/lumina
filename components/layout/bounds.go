@@ -98,6 +98,65 @@ func (m Model) FocusedCWD() string {
 	return ""
 }
 
+// HitTest returns the PaneID under the given layout-local coordinates
+// (0,0 = top-left of the layout content area). localX/localY are translated
+// into the pane's content-cell space — subtracting the pane's origin plus
+// one cell for the border (so (0,0) is the first cell inside the border).
+// Coordinates falling on the pane border itself still map to the containing
+// pane with clamped local coordinates.
+func (m Model) HitTest(x, y int) (paneID PaneID, target msgs.FocusTarget, localX, localY int, ok bool) {
+	px, py, pw, ph, leaf, found := findHit(m.root, 0, 0, m.width, m.height, x, y)
+	if !found || leaf == nil {
+		return 0, msgs.FocusLayout, 0, 0, false
+	}
+	localX = x - px - 1
+	localY = y - py - 1
+	if localX < 0 {
+		localX = 0
+	}
+	if localY < 0 {
+		localY = 0
+	}
+	if pw > 2 && localX > pw-3 {
+		localX = pw - 3
+	}
+	if ph > 2 && localY > ph-3 {
+		localY = ph - 3
+	}
+	return leaf.ID, msgs.FocusTerminal, localX, localY, true
+}
+
+// findHit descends the tree looking for the leaf whose bounds contain (x, y).
+// Returns the leaf's bounds rectangle and the leaf itself.
+func findHit(n PaneNode, ox, oy, w, h, x, y int) (int, int, int, int, *LeafNode, bool) {
+	if x < ox || y < oy || x >= ox+w || y >= oy+h {
+		return 0, 0, 0, 0, nil, false
+	}
+	switch v := n.(type) {
+	case *LeafNode:
+		return ox, oy, w, h, v, true
+	case *SplitNode:
+		ratio := clampRatio(v.Ratio)
+		switch v.Direction {
+		case msgs.SplitHorizontal:
+			firstW := max(1, int(float64(w)*ratio))
+			secondW := max(1, w-firstW)
+			if px, py, pw, ph, leaf, ok := findHit(v.First, ox, oy, firstW, h, x, y); ok {
+				return px, py, pw, ph, leaf, true
+			}
+			return findHit(v.Second, ox+firstW, oy, secondW, h, x, y)
+		case msgs.SplitVertical:
+			firstH := max(1, int(float64(h)*ratio))
+			secondH := max(1, h-firstH)
+			if px, py, pw, ph, leaf, ok := findHit(v.First, ox, oy, w, firstH, x, y); ok {
+				return px, py, pw, ph, leaf, true
+			}
+			return findHit(v.Second, ox, oy+firstH, w, secondH, x, y)
+		}
+	}
+	return 0, 0, 0, 0, nil, false
+}
+
 func findBounds(n PaneNode, id PaneID, ox, oy, w, h int) (int, int, int, int, bool) {
 	switch v := n.(type) {
 	case *LeafNode:

@@ -10,7 +10,6 @@ import (
 type KeyMap struct {
 	FocusTerminal    key.Binding
 	FocusSidebar     key.Binding
-	FocusEditor      key.Binding
 	OpenTerminalHere key.Binding
 	Save             key.Binding
 	Quit             key.Binding
@@ -37,6 +36,11 @@ type KeyMap struct {
 	ToggleSidebar   key.Binding
 	ToggleStatusBar key.Binding
 	EnterCopyMode   key.Binding
+
+	// Sidebar file-manager (feature 006)
+	SidebarNewDir  key.Binding
+	SidebarNewFile key.Binding
+	SidebarParent  key.Binding
 }
 
 // NewKeyMap builds a KeyMap from the user's Keybindings config.
@@ -49,10 +53,6 @@ func NewKeyMap(kb config.Keybindings) KeyMap {
 		FocusSidebar: key.NewBinding(
 			key.WithKeys(kb.FocusSidebar...),
 			key.WithHelp(join(kb.FocusSidebar), "focus sidebar"),
-		),
-		FocusEditor: key.NewBinding(
-			key.WithKeys(kb.FocusEditor...),
-			key.WithHelp(join(kb.FocusEditor), "focus editor"),
 		),
 		OpenTerminalHere: key.NewBinding(
 			key.WithKeys(kb.OpenTerminalHere...),
@@ -150,6 +150,18 @@ func NewKeyMap(kb config.Keybindings) KeyMap {
 			key.WithKeys(kb.EnterCopyMode...),
 			key.WithHelp(join(kb.EnterCopyMode), "copy mode"),
 		),
+		SidebarNewDir: key.NewBinding(
+			key.WithKeys(kb.SidebarNewDir...),
+			key.WithHelp(join(kb.SidebarNewDir), "new dir (sidebar)"),
+		),
+		SidebarNewFile: key.NewBinding(
+			key.WithKeys(kb.SidebarNewFile...),
+			key.WithHelp(join(kb.SidebarNewFile), "new file (sidebar)"),
+		),
+		SidebarParent: key.NewBinding(
+			key.WithKeys(kb.SidebarParent...),
+			key.WithHelp(join(kb.SidebarParent), "parent dir (sidebar)"),
+		),
 	}
 }
 
@@ -176,11 +188,12 @@ func (k KeyMap) ShortHelp() []key.Binding {
 // FullHelp returns all bindings for the expanded help view.
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.FocusTerminal, k.FocusSidebar, k.FocusEditor, k.OpenTerminalHere},
+		{k.FocusTerminal, k.FocusSidebar, k.OpenTerminalHere},
 		{k.SplitHorizontal, k.SplitVertical, k.ClosePane},
 		{k.FocusPaneLeft, k.FocusPaneRight, k.FocusPaneUp, k.FocusPaneDown},
 		{k.GrowPaneH, k.ShrinkPaneH, k.GrowSidebar, k.ShrinkSidebar},
 		{k.ToggleSidebar, k.ToggleStatusBar, k.EnterCopyMode},
+		{k.SidebarNewDir, k.SidebarNewFile, k.SidebarParent},
 		{k.Save, k.Quit, k.Help},
 	}
 }
