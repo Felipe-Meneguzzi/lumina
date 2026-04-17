@@ -41,8 +41,9 @@ func main() {
 	}
 
 	layoutOpts := buildLayoutOpts(overrides)
+	appOpts := buildAppOpts(overrides)
 
-	model, err := app.New(cfg, layoutOpts...)
+	model, err := app.New(cfg, layoutOpts, appOpts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lumina: init error: %v\n", err)
 		os.Exit(1)
@@ -87,6 +88,14 @@ func buildLayoutOpts(o cli.StartupOverrides) []layout.Option {
 	}
 	if o.StartPanes > 1 {
 		opts = append(opts, layout.WithInitialLayout(orientToSplitDir(o.StartOrient), o.StartPanes))
+	}
+	return opts
+}
+
+func buildAppOpts(o cli.StartupOverrides) []app.Option {
+	var opts []app.Option
+	if o.NoSidebar {
+		opts = append(opts, app.WithNoSidebar())
 	}
 	return opts
 }

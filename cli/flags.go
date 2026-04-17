@@ -1,4 +1,4 @@
-// Package cli parses Lumina startup flags (-mp, -sp, -sc) into a
+// Package cli parses Lumina startup flags (-mp, -sp, -sc, -nsb) into a
 // StartupOverrides value consumed by main.
 package cli
 
@@ -27,6 +27,7 @@ type StartupOverrides struct {
 	StartPanes   int    // 0 or 1 = no pre-split; >=2 = create N initial panes.
 	StartOrient  Orient // OrientNone when StartPanes <= 1.
 	StartCommand string // "" = shell default; otherwise run this command in initial panes.
+	NoSidebar    bool   // true = hide sidebar on startup for all panes.
 	FilePath     string // positional argument (compatibility with `lumina <file>`).
 }
 
@@ -100,10 +101,12 @@ func ParseArgs(args []string, errOut io.Writer) (StartupOverrides, error) {
 		mp    int
 		spRaw string
 		sc    string
+		nsb   bool
 	)
 	fs.IntVar(&mp, "mp", 0, "max panes allowed in this session (default 4)")
 	fs.StringVar(&spRaw, "sp", "", "pre-split layout: h<N> (horizontal) or v<N> (vertical)")
 	fs.StringVar(&sc, "sc", "", "run <command> in initial panes instead of the default shell")
+	fs.BoolVar(&nsb, "nsb", false, "hide sidebar on startup")
 
 	if err := fs.Parse(args); err != nil {
 		return StartupOverrides{}, err
@@ -139,6 +142,10 @@ func ParseArgs(args []string, errOut io.Writer) (StartupOverrides, error) {
 		out.StartCommand = strings.TrimSpace(sc)
 	}
 
+	if nsb {
+		out.NoSidebar = true
+	}
+
 	if rest := fs.Args(); len(rest) > 0 {
 		out.FilePath = rest[0]
 	}
@@ -160,6 +167,7 @@ Flags:
   -sp <h|v>N        Pre-split layout on startup (e.g. h3 = 3 horizontal panes)
   -sc <command>     Run <command> in initial panes instead of the default shell
                     (applies only to panes created by -sp; later splits use the shell)
+  -nsb              Hide sidebar on startup for all panes
   --version, -v     Print version and exit
   --help, -h        Show this help
 
@@ -167,6 +175,7 @@ Examples:
   lumina
   lumina -mp 10 -sp h3 -sc claude
   lumina notes.md -sp v2
+  lumina -nsb -sp h2
 `
 }
 
