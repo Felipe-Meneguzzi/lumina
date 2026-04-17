@@ -1,0 +1,10 @@
+lumina
+*.exe
+*.test
+*.out
+vendor/
+.DS_Store
+*.tmp
+*.swp
+.vscode/
+.idea/

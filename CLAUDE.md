@@ -1,0 +1,114 @@
+# Lumina Development Guidelines
+
+Auto-generated from feature plan 001-lumina-core. Last updated: 2026-04-16
+
+## Project Overview
+
+Lumina é um editor TUI em Go (estilo VSCode para terminal) com Bubble Tea.
+Arquitetura: Componentes Compostos (Elm Model/Update/View) — cada painel é um `tea.Model`
+independente, composto pelo `app.Model` raiz via delegação e mensagens tipadas.
+
+## Active Technologies
+- Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3 (003-ux-fixes-multiwindow)
+- N/A (sem persistência nova) (003-ux-fixes-multiwindow)
+
+- **Language**: Go 1.26
+- **TUI Framework**: Bubble Tea + Lip Gloss + Bubbles (Charm ecosystem)
+- **PTY**: creack/pty (Linux/macOS only)
+- **Metrics**: gopsutil/v3
+- **Config**: BurntSushi/toml
+- **Storage**: os.ReadFile / os.WriteFile (sistema de arquivos)
+
+## Project Structure
+
+```text
+lumina/
+├── main.go
+├── app/
+│   ├── app.go          # Model raiz — roteia mensagens entre componentes
+│   └── keymap.go       # ÚNICO lugar para key.Binding — nunca hardcode em componentes
+├── components/
+│   ├── terminal/       # PTY wrapper (creack/pty)
+│   ├── sidebar/        # File explorer (bubbles/list + os.ReadDir)
+│   ├── editor/         # Text buffer ([]string + bubbles/viewport)
+│   └── statusbar/      # Métricas em tempo real (gopsutil ticker)
+├── msgs/
+│   └── msgs.go         # TODOS os tea.Msg customizados — cross-component communication
+├── config/
+│   └── config.go       # Config struct + LoadConfig()
+└── tests/
+    └── integration/    # Message flow integration tests
+```
+
+## Commands
+
+```bash
+# Build
+go build -o lumina .
+
+# Run
+./lumina
+./lumina arquivo.txt
+
+# Test
+go test ./...
+
+# Lint
+golangci-lint run
+```
+
+## Code Style
+
+- **Go**: `gofmt` obrigatório; `golangci-lint` com ruleset padrão no CI
+- **Naming**: Exported PascalCase, unexported camelCase (convenção Go padrão)
+- **Functions**: Máximo 40 linhas de código não-comentário; complexidade ciclomática ≤10
+- **State**: Sem estado global mutável fora do pacote `config/`
+- **Styles**: Usar Lip Gloss para tudo — ANSI escape codes diretos são PROIBIDOS
+  (exceção: camada PTY raw em `components/terminal/`)
+- **Messages**: Cross-component APENAS via tipos em `msgs/msgs.go` — sem imports circulares
+
+## Architecture Rules
+
+- Todo I/O assíncrono (PTY reads, ticker, file reads) DEVE ser `tea.Cmd` — nunca bloqueie `Update()`
+- `Update()` DEVE retornar em ≤16ms (orçamento de frame para ≥30 FPS)
+- `View()` DEVE retornar string com exatamente `m.height` linhas e cada linha ≤ `m.width` colunas
+- Keybindings: APENAS em `app/keymap.go` via `key.Binding` do pacote bubbles
+- PTY resize: propagar via `pty.Setsize` sempre que receber `tea.WindowSizeMsg`
+
+## Testing Requirements
+
+- Cada `tea.Model` exportado DEVE ter unit tests isolados (sem dependência de outros componentes)
+- Feed de mensagens sintéticas (`tea.Msg`) para testar `Update()` — não mockar a TUI inteira
+- Integration tests em `tests/integration/` para cada novo `tea.Msg` adicionado a `msgs/msgs.go`
+- `go test ./...` DEVE passar com zero falhas antes de qualquer merge
+
+## Spec Artifacts
+
+### Feature 001: Lumina Core (baseline)
+- **Spec**: `specs/001-lumina-core/spec.md`
+- **Plan**: `specs/001-lumina-core/plan.md`
+
+### Feature 002: Multiwindow Layout
+- **Spec**: `specs/002-multiwindow/spec.md`
+- **Plan**: `specs/002-multiwindow/plan.md`
+- **Research**: `specs/002-multiwindow/research.md`
+- **Data Model**: `specs/002-multiwindow/data-model.md`
+- **Contracts**: `specs/002-multiwindow/contracts/`
+- **Quickstart**: `specs/002-multiwindow/quickstart.md`
+- **Tasks**: `specs/002-multiwindow/tasks.md`
+
+### Feature 003: UX Fixes Multi-Window ← ACTIVE
+- **Spec**: `specs/003-ux-fixes-multiwindow/spec.md`
+- **Plan**: `specs/003-ux-fixes-multiwindow/plan.md`
+- **Research**: `specs/003-ux-fixes-multiwindow/research.md`
+- **Data Model**: `specs/003-ux-fixes-multiwindow/data-model.md`
+- **Contracts**: `specs/003-ux-fixes-multiwindow/contracts/`
+- **Quickstart**: `specs/003-ux-fixes-multiwindow/quickstart.md`
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
+
+## Recent Changes
+- 003-ux-fixes-multiwindow: Added Go 1.26 + Bubble Tea, Lip Gloss, Bubbles (Charm), creack/pty, gopsutil/v3
+- 002-multiwindow: Novo package `components/layout/` com binary split tree (Hyprland-inspired)
+- 002-multiwindow: `app.go` migrado para usar `layout.Model` (removidos campos `term`/`ed` diretos)
