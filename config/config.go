@@ -17,8 +17,9 @@ type Config struct {
 	ShowHidden      bool        `toml:"show_hidden"`
 	SidebarWidth    int         `toml:"sidebar_width"` // columns
 	Theme           string      `toml:"theme"`
-	Keys            Keybindings `toml:"-"` // loaded separately from keybindings.json
-	ShellWarning    string      `toml:"-"` // set when configured shell was rejected
+	ForceShellTheme bool        `toml:"force_shell_theme"` // inject Lumina's default prompt into spawned shells
+	Keys            Keybindings `toml:"-"`                 // loaded separately from keybindings.json
+	ShellWarning    string      `toml:"-"`                 // set when configured shell was rejected
 }
 
 // isWindowsExecutable reports whether a path looks like a Windows PE binary.
@@ -65,6 +66,7 @@ func defaults() Config {
 		ShowHidden:      true,
 		SidebarWidth:    30,
 		Theme:           "default",
+		ForceShellTheme: true,
 	}
 }
 

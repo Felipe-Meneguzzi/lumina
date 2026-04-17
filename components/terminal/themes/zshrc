@@ -1,0 +1,31 @@
+# Lumina default theme — oh-my-zsh robbyrussell-inspired prompt for zsh.
+# Sources the user's real ~/.zshrc first so aliases/functions are preserved,
+# then overrides PROMPT with Lumina's themed prompt.
+
+if [ -z "$LUMINA_THEME_LOADED" ]; then
+    export LUMINA_THEME_LOADED=1
+    if [ -f "$HOME/.zshrc" ]; then
+        _lumina_saved_zdotdir="$ZDOTDIR"
+        ZDOTDIR="$HOME"
+        source "$HOME/.zshrc"
+        ZDOTDIR="$_lumina_saved_zdotdir"
+        unset _lumina_saved_zdotdir
+    fi
+fi
+
+autoload -Uz vcs_info
+setopt PROMPT_SUBST
+zstyle ':vcs_info:git:*' formats ' %F{blue}git:(%F{red}%b%F{blue})%f'
+zstyle ':vcs_info:git:*' actionformats ' %F{blue}git:(%F{red}%b|%a%F{blue})%f'
+
+typeset -ga precmd_functions
+if [[ ${precmd_functions[(ie)vcs_info]} -gt ${#precmd_functions} ]]; then
+    precmd_functions+=(vcs_info)
+fi
+
+__lumina_git_dirty() {
+    [ -n "$(git status --porcelain 2>/dev/null | head -n 1)" ] && echo ' %F{yellow}✗%f'
+}
+
+PROMPT='%F{green}➜%f  %F{cyan}%B%1~%b%f${vcs_info_msg_0_}$(__lumina_git_dirty) '
+RPROMPT=''

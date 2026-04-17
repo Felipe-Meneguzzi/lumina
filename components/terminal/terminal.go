@@ -31,9 +31,10 @@ var (
 // Model is the Bubble Tea model for the terminal pane.
 type Model struct {
 	shell        string
+	forceTheme   bool
 	ptyFile      *os.File
 	cmd          *exec.Cmd
-	vt           vt10x.Terminal // VT100 screen buffer — handles all escape sequences
+	vt           vt10x.Terminal  // VT100 screen buffer — handles all escape sequences
 	reservedKeys map[string]bool // keys not to forward to PTY (global shortcuts)
 	width        int
 	height       int
@@ -46,10 +47,11 @@ type Model struct {
 func New(cfg config.Config) (Model, error) {
 	cols, rows := 78, 22 // default inner dimensions (width-2, height-2 for border)
 	m := Model{
-		shell:  cfg.Shell,
-		width:  80,
-		height: 24,
-		vt:     vt10x.New(vt10x.WithSize(cols, rows)),
+		shell:      cfg.Shell,
+		forceTheme: cfg.ForceShellTheme,
+		width:      80,
+		height:     24,
+		vt:         vt10x.New(vt10x.WithSize(cols, rows)),
 	}
 
 	if err := m.startShell(); err != nil {
@@ -100,10 +102,11 @@ func (m *Model) SetReservedKeys(keys map[string]bool) { m.reservedKeys = keys }
 func (m Model) Dimensions() (int, int) { return m.width, m.height }
 
 func (m *Model) startShell() error {
-	cmd := exec.Command(m.shell)
 	env := os.Environ()
 	env = setEnv(env, "TERM", "xterm-256color")
 	env = setEnv(env, "COLORTERM", "truecolor")
+
+	cmd := buildShellCommand(m.shell, m.forceTheme, &env)
 	cmd.Env = env
 
 	ptmx, err := pty.Start(cmd)

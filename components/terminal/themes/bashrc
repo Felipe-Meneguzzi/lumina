@@ -1,0 +1,20 @@
+# Lumina default theme — oh-my-zsh robbyrussell-inspired prompt for bash.
+# Sources the user's ~/.bashrc first so aliases and PATH tweaks are preserved,
+# then overrides PS1 with Lumina's themed prompt.
+
+if [ -z "$LUMINA_THEME_LOADED" ]; then
+    export LUMINA_THEME_LOADED=1
+    [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+fi
+
+__lumina_git_info() {
+    local branch
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null) || return
+    local dirty=""
+    if [ -n "$(git status --porcelain 2>/dev/null | head -n 1)" ]; then
+        dirty=' \[\033[33m\]✗\[\033[0m\]'
+    fi
+    printf ' \[\033[34m\]git:(\[\033[31m\]%s\[\033[34m\])\[\033[0m\]%s' "$branch" "$dirty"
+}
+
+PS1='\[\033[32m\]➜\[\033[0m\]  \[\033[36;1m\]\W\[\033[0m\]$(__lumina_git_info) '
