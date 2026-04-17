@@ -115,6 +115,14 @@ type TerminalResizeMsg struct {
 	Height int
 }
 
+// TerminalScrollMsg adjusts the focused terminal's scrollback view.
+// Positive Delta scrolls up (into history); negative scrolls down toward live.
+// Zero snaps back to the live view (exit scrollback mode).
+type TerminalScrollMsg struct {
+	Delta int
+	Reset bool
+}
+
 // SidebarResizeMsg propagates computed sidebar pane dimensions.
 type SidebarResizeMsg struct {
 	Width  int

@@ -39,8 +39,10 @@ type Model struct {
 	width        int
 	height       int
 	focused      bool
-	closed       bool // true when running without a live PTY (used in tests)
-	paneID       int  // identifies this terminal in multi-pane output routing
+	closed       bool             // true when running without a live PTY (used in tests)
+	paneID       int              // identifies this terminal in multi-pane output routing
+	scrollback   [][]vt10x.Glyph  // rows that have been pushed off the top of the viewport
+	scrollOffset int              // how many rows above the live view the user is currently looking at
 }
 
 // New creates a new terminal Model and starts the shell process.
@@ -169,13 +171,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Shell exited — auto-restart (FR-010).
 			cols, rows := m.vt.Size()
 			m.vt = vt10x.New(vt10x.WithSize(cols, rows))
+			m.scrollback = nil
+			m.scrollOffset = 0
 			if err := m.startShell(); err != nil {
 				return m, nil
 			}
 			return m, waitForOutput(m.ptyFile, m.paneID)
 		}
-		// Feed raw bytes to the VT100 emulator — it handles all escape sequences.
-		_, _ = m.vt.Write(msg.Data)
+		// Feed raw bytes to the VT100 emulator while capturing scroll history.
+		userScrolled := m.scrollOffset > 0
+		pushed := m.writeWithScrollback(msg.Data)
+		// Preserve the user's viewing position when new history is appended.
+		if userScrolled && pushed > 0 {
+			m.scrollOffset += pushed
+			if m.scrollOffset > len(m.scrollback) {
+				m.scrollOffset = len(m.scrollback)
+			}
+		}
 		if m.ptyFile != nil {
 			return m, waitForOutput(m.ptyFile, m.paneID)
 		}
@@ -187,8 +199,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgs.PtyInputMsg:
 		if m.ptyFile != nil && len(msg.Data) > 0 {
+			// Typing returns the user to the live view, mirroring tmux/screen behaviour.
+			m.scrollOffset = 0
 			_, _ = m.ptyFile.Write(msg.Data)
 		}
+		return m, nil
+
+	case msgs.TerminalScrollMsg:
+		if msg.Reset {
+			m.scrollReset()
+			return m, nil
+		}
+		m.scrollDelta(msg.Delta)
 		return m, nil
 
 	case msgs.TerminalResizeMsg:
@@ -197,6 +219,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		innerCols := max(1, m.width-2)
 		innerRows := max(1, m.height-2)
 		m.vt.Resize(innerCols, innerRows)
+		// Width changed — previously captured rows would misalign, so drop them.
+		prevCols := 0
+		if len(m.scrollback) > 0 {
+			prevCols = len(m.scrollback[0])
+		}
+		if prevCols != 0 && prevCols != innerCols {
+			m.scrollback = nil
+			m.scrollOffset = 0
+		}
 		if m.ptyFile != nil {
 			_ = pty.Setsize(m.ptyFile, &pty.Winsize{
 				Rows: uint16(innerRows),
@@ -218,73 +249,103 @@ func vtColor(c vt10x.Color) lipgloss.Color {
 	return lipgloss.Color(fmt.Sprintf("%d", c))
 }
 
-// renderScreen converts the vt10x screen buffer to a styled string.
-// Consecutive cells with the same style are batched for efficiency.
+// renderGlyphRow converts a slice of glyphs into a styled, batched string.
+// Consecutive cells sharing style are merged for efficiency.
+func renderGlyphRow(glyphs []vt10x.Glyph) string {
+	var (
+		out     strings.Builder
+		curFG   = vt10x.DefaultFG
+		curBG   = vt10x.DefaultBG
+		curMode int16
+		pending strings.Builder
+	)
+
+	flush := func() {
+		if pending.Len() == 0 {
+			return
+		}
+		style := lipgloss.NewStyle()
+		fg := vtColor(curFG)
+		bg := vtColor(curBG)
+		if fg != "" {
+			style = style.Foreground(fg)
+		}
+		if bg != "" {
+			style = style.Background(bg)
+		}
+		if curMode&attrBold != 0 {
+			style = style.Bold(true)
+		}
+		if curMode&attrUnderline != 0 {
+			style = style.Underline(true)
+		}
+		if curMode&attrItalic != 0 {
+			style = style.Italic(true)
+		}
+		if curMode&attrReverse != 0 {
+			style = style.Reverse(true)
+		}
+		out.WriteString(style.Render(pending.String()))
+		pending.Reset()
+	}
+
+	for _, g := range glyphs {
+		if g.FG != curFG || g.BG != curBG || g.Mode != curMode {
+			flush()
+			curFG = g.FG
+			curBG = g.BG
+			curMode = g.Mode
+		}
+		ch := g.Char
+		if ch == 0 {
+			ch = ' '
+		}
+		pending.WriteRune(ch)
+	}
+	flush()
+	return out.String()
+}
+
+// renderScreen renders the live terminal viewport as a styled string.
 func renderScreen(vt vt10x.Terminal) string {
 	cols, rows := vt.Size()
 	var out strings.Builder
-
 	for y := 0; y < rows; y++ {
-		var (
-			rowBuf  strings.Builder
-			curFG   = vt10x.DefaultFG
-			curBG   = vt10x.DefaultBG
-			curMode int16
-			pending strings.Builder
-		)
-
-		flush := func() {
-			if pending.Len() == 0 {
-				return
-			}
-			style := lipgloss.NewStyle()
-			fg := vtColor(curFG)
-			bg := vtColor(curBG)
-			if fg != "" {
-				style = style.Foreground(fg)
-			}
-			if bg != "" {
-				style = style.Background(bg)
-			}
-			if curMode&attrBold != 0 {
-				style = style.Bold(true)
-			}
-			if curMode&attrUnderline != 0 {
-				style = style.Underline(true)
-			}
-			if curMode&attrItalic != 0 {
-				style = style.Italic(true)
-			}
-			if curMode&attrReverse != 0 {
-				style = style.Reverse(true)
-			}
-			rowBuf.WriteString(style.Render(pending.String()))
-			pending.Reset()
-		}
-
-		for x := 0; x < cols; x++ {
-			g := vt.Cell(x, y)
-			if g.FG != curFG || g.BG != curBG || g.Mode != curMode {
-				flush()
-				curFG = g.FG
-				curBG = g.BG
-				curMode = g.Mode
-			}
-			ch := g.Char
-			if ch == 0 {
-				ch = ' '
-			}
-			pending.WriteRune(ch)
-		}
-		flush()
-
+		out.WriteString(renderGlyphRow(snapshotRow(vt, y, cols)))
 		if y < rows-1 {
-			out.WriteString(rowBuf.String() + "\n")
-		} else {
-			out.WriteString(rowBuf.String())
+			out.WriteByte('\n')
 		}
 	}
+	return out.String()
+}
 
+// renderWithScrollback renders `rows` rows combining (oldest→newest) the
+// scrollback buffer and the live viewport. `offset` is how many rows above
+// the live view the user is currently looking at (0 = live).
+func renderWithScrollback(vt vt10x.Terminal, scrollback [][]vt10x.Glyph, offset int) string {
+	cols, rows := vt.Size()
+	if offset <= 0 {
+		return renderScreen(vt)
+	}
+	n := len(scrollback)
+	if offset > n {
+		offset = n
+	}
+	// Combined indices: [0..n) = scrollback, [n..n+rows) = live rows.
+	start := n - offset
+
+	var out strings.Builder
+	for i := 0; i < rows; i++ {
+		idx := start + i
+		if idx < n {
+			out.WriteString(renderGlyphRow(scrollback[idx]))
+		} else {
+			out.WriteString(renderGlyphRow(snapshotRow(vt, idx-n, cols)))
+		}
+		if i < rows-1 {
+			out.WriteByte('\n')
+		}
+	}
 	return out.String()
 }
 
@@ -294,7 +355,7 @@ func (m Model) View() string {
 	if m.focused {
 		style = focusedBorder
 	}
-	content := renderScreen(m.vt)
+	content := renderWithScrollback(m.vt, m.scrollback, m.scrollOffset)
 	return style.Width(m.width - 2).Height(m.height - 2).Render(content)
 }
 

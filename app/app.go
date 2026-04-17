@@ -23,11 +23,13 @@ func shellEscape(path string) string {
 }
 
 const (
-	statusBarHeight = 1
-	sidebarMinWidth = 80 // hide sidebar below this total width
-	sidebarMinSize  = 16 // minimum sidebar width in columns
-	sidebarMaxRatio = 3  // sidebar max = totalWidth / sidebarMaxRatio
-	sidebarStep     = 2  // columns per resize keypress
+	statusBarHeight  = 1
+	sidebarMinWidth  = 80 // hide sidebar below this total width
+	sidebarMinSize   = 16 // minimum sidebar width in columns
+	sidebarMaxRatio  = 3  // sidebar max = totalWidth / sidebarMaxRatio
+	sidebarStep      = 2  // columns per resize keypress
+	scrollPageStep   = 10 // rows per PgUp/PgDown in terminal scrollback
+	scrollWheelStep  = 3  // rows per mouse wheel tick in terminal scrollback
 )
 
 var confirmStyle = lipgloss.NewStyle().
@@ -227,9 +229,23 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// handleMouse handles mouse events: click-to-focus and sidebar drag-to-resize.
+// handleMouse handles mouse events: click-to-focus, sidebar drag-to-resize,
+// and Alt+wheel scrollback for terminal panes.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	const borderTolerance = 1
+
+	// Alt+wheel scrolls the focused terminal's scrollback history, regardless of
+	// where the pointer is — Alt gates it so plain wheel events stay reserved
+	// for shell apps that opt into mouse reporting.
+	if msg.Alt && (msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown) {
+		if m.focus == focusContent && m.layout.FocusedKind() == layout.KindTerminal {
+			delta := scrollWheelStep
+			if msg.Button == tea.MouseButtonWheelDown {
+				delta = -scrollWheelStep
+			}
+			return m.updateLayout(msgs.TerminalScrollMsg{Delta: delta})
+		}
+	}
 
 	switch msg.Action {
 	case tea.MouseActionPress:
@@ -358,6 +374,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// ── Terminal raw mode — forward input to PTY when content is focused ──────
 	if m.focus == focusContent && m.layout.FocusedKind() == layout.KindTerminal {
+		// PgUp/PgDown drive the scrollback history instead of being forwarded.
+		switch msg.Type {
+		case tea.KeyPgUp:
+			return m.updateLayout(msgs.TerminalScrollMsg{Delta: scrollPageStep})
+		case tea.KeyPgDown:
+			return m.updateLayout(msgs.TerminalScrollMsg{Delta: -scrollPageStep})
+		}
 		data := terminal.KeyToBytes(msg, m.keys.GlobalKeys())
 		if len(data) > 0 {
 			return m.updateLayout(msgs.PtyInputMsg{Data: data})
