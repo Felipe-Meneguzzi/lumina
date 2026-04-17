@@ -22,32 +22,44 @@ var (
 
 // Model is the Bubble Tea model for the terminal pane.
 type Model struct {
-	shell        string
-	forceTheme   bool
-	ptyFile      *os.File
-	cmd          *exec.Cmd
-	vt           *vt.Emulator    // virtual terminal — handles all escape sequences
-	reservedKeys map[string]bool // keys not to forward to PTY (global shortcuts)
-	width        int
-	height       int
-	focused      bool
-	closed       bool             // true when running without a live PTY (used in tests)
-	paneID       int              // identifies this terminal in multi-pane output routing
-	scrollOffset int          // how many rows above the live view the user is currently looking at
-	state        *sharedState // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
-	copy         *copyState   // non-nil when the terminal is in tmux-style copy mode
+	shell         string
+	shellOverride string // when non-empty, runs via `sh -c <override>` instead of the default shell
+	forceTheme    bool
+	ptyFile       *os.File
+	cmd           *exec.Cmd
+	vt            *vt.Emulator    // virtual terminal — handles all escape sequences
+	reservedKeys  map[string]bool // keys not to forward to PTY (global shortcuts)
+	width         int
+	height        int
+	focused       bool
+	closed        bool         // true when running without a live PTY (used in tests)
+	paneID        int          // identifies this terminal in multi-pane output routing
+	scrollOffset  int          // how many rows above the live view the user is currently looking at
+	state         *sharedState // mutable state populated by emulator callbacks (mouse modes, title, cwd, bell)
+	copy          *copyState   // non-nil when the terminal is in tmux-style copy mode
 }
 
 // New creates a new terminal Model and starts the shell process.
 func New(cfg config.Config) (Model, error) {
+	return newModel(cfg, "")
+}
+
+// NewWithCommand is like New but runs the given command instead of the
+// default shell. Empty command falls back to New's behaviour.
+func NewWithCommand(cfg config.Config, command string) (Model, error) {
+	return newModel(cfg, command)
+}
+
+func newModel(cfg config.Config, override string) (Model, error) {
 	cols, rows := 78, 22 // default inner dimensions (width-2, height-2 for border)
 	m := Model{
-		shell:      cfg.Shell,
-		forceTheme: cfg.ForceShellTheme,
-		width:      80,
-		height:     24,
-		vt:         vt.NewEmulator(cols, rows),
-		state:      &sharedState{},
+		shell:         cfg.Shell,
+		shellOverride: override,
+		forceTheme:    cfg.ForceShellTheme,
+		width:         80,
+		height:        24,
+		vt:            vt.NewEmulator(cols, rows),
+		state:         &sharedState{},
 	}
 	m.vt.SetScrollbackSize(scrollbackMax)
 	installCallbacks(m.vt, m.state)
@@ -109,7 +121,12 @@ func (m *Model) startShell() error {
 	env = setEnv(env, "TERM", "xterm-256color")
 	env = setEnv(env, "COLORTERM", "truecolor")
 
-	cmd := buildShellCommand(m.shell, m.forceTheme, &env)
+	var cmd *exec.Cmd
+	if m.shellOverride != "" {
+		cmd = exec.Command("sh", "-c", m.shellOverride)
+	} else {
+		cmd = buildShellCommand(m.shell, m.forceTheme, &env)
+	}
 	cmd.Env = env
 
 	ptmx, err := pty.Start(cmd)

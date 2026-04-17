@@ -93,6 +93,21 @@ func TestModel_ImplementsTeaModel(t *testing.T) {
 	var _ tea.Model = m
 }
 
+// TestNewWithCommand_BootsOverride ensures the override path builds a live
+// model without falling back to the default shell.
+func TestNewWithCommand_BootsOverride(t *testing.T) {
+	cfg := config.Config{Shell: "/bin/sh", SidebarWidth: 30}
+	m, err := terminal.NewWithCommand(cfg, "/bin/true")
+	if err != nil {
+		t.Fatalf("NewWithCommand: %v", err)
+	}
+	defer m.Close()
+	// The model must be a live tea.Model — sanity check via View().
+	if v := m.View(); v == "" {
+		t.Error("expected non-empty View() after NewWithCommand")
+	}
+}
+
 // TestUpdate_PtyOutputMsg_PreservesTrueColor ensures 24-bit RGB SGR sequences
 // emitted by the inner application survive the emulator → renderer → lipgloss
 // pipeline. This is the regression that the vt10x → x/vt swap was made to fix.

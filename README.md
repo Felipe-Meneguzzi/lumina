@@ -177,6 +177,38 @@ Abrir um arquivo específico:
 lumina path/to/file.txt
 ```
 
+### CLI flags
+
+Lumina aceita três flags opcionais para customizar o boot da sessão (efêmeras — não
+alteram `config.toml`):
+
+| Flag | Formato | Default | Descrição |
+|------|---------|---------|-----------|
+| `-mp` | `-mp N` | 4 | Número máximo de painéis permitidos na sessão. |
+| `-sp` | `-sp h<N>` / `-sp v<N>` | 1 painel | Cria `N` painéis iniciais dispostos horizontalmente (`h`) ou verticalmente (`v`). |
+| `-sc` | `-sc "<comando>"` | shell default | Executa `<comando>` nos painéis criados por `-sp` (apenas nos iniciais — splits manuais posteriores abrem o shell default). |
+
+Exemplos:
+
+```bash
+lumina                                  # boot tradicional: 1 painel, teto 4
+lumina -mp 10                           # teto 10, 1 painel inicial
+lumina -sp h3                           # 3 painéis lado-a-lado
+lumina -sp v2 -sc claude                # 2 painéis empilhados rodando claude
+lumina -mp 10 -sp h3 -sc claude         # combinação completa
+lumina notes.md -sp h2                  # arquivo + layout customizado
+```
+
+Regras de validação:
+
+- `-mp < 1`, `-sp` fora do formato `h<N>`/`v<N>`, ou `-sc ""` abortam a inicialização
+  com mensagem em stderr (exit code 2).
+- Se `-mp` explícito for menor que `N` de `-sp`, a inicialização é abortada.
+- Se `-mp` for omitido e `-sp hN` / `-sp vN` exceder o default (4), o teto efetivo
+  sobe automaticamente para `N`.
+
+Ver `lumina --help` para a mensagem de ajuda completa.
+
 ### Dica para WSL + Windows Terminal
 
 Alguns atalhos padrão do Windows Terminal (ex: `alt+shift+arrow` para mover pane) são

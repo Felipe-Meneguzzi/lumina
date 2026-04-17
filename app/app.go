@@ -23,13 +23,13 @@ func shellEscape(path string) string {
 }
 
 const (
-	statusBarHeight  = 1
-	sidebarMinWidth  = 80 // hide sidebar below this total width
-	sidebarMinSize   = 16 // minimum sidebar width in columns
-	sidebarMaxRatio  = 3  // sidebar max = totalWidth / sidebarMaxRatio
-	sidebarStep      = 2  // columns per resize keypress
-	scrollPageStep   = 10 // rows per PgUp/PgDown in terminal scrollback
-	scrollWheelStep  = 3  // rows per mouse wheel tick in terminal scrollback
+	statusBarHeight = 1
+	sidebarMinWidth = 80 // hide sidebar below this total width
+	sidebarMinSize  = 16 // minimum sidebar width in columns
+	sidebarMaxRatio = 3  // sidebar max = totalWidth / sidebarMaxRatio
+	sidebarStep     = 2  // columns per resize keypress
+	scrollPageStep  = 10 // rows per PgUp/PgDown in terminal scrollback
+	scrollWheelStep = 3  // rows per mouse wheel tick in terminal scrollback
 )
 
 var confirmStyle = lipgloss.NewStyle().
@@ -58,7 +58,7 @@ type Model struct {
 	height       int
 	sidebarWidth int
 	showHelp     bool
-	confirmClose bool // waiting for user to confirm discarding unsaved changes
+	confirmClose bool   // waiting for user to confirm discarding unsaved changes
 	shell        string // active shell path, shown on startup notification
 	shellWarning string // non-empty if configured shell was rejected (e.g. .exe on WSL)
 
@@ -76,10 +76,10 @@ type Model struct {
 }
 
 // New initialises the application.
-func New(cfg config.Config) (Model, error) {
+func New(cfg config.Config, layoutOpts ...layout.Option) (Model, error) {
 	cwd, _ := os.Getwd()
 
-	lay, err := layout.New(cfg)
+	lay, err := layout.New(cfg, layoutOpts...)
 	if err != nil {
 		return Model{}, fmt.Errorf("creating layout: %w", err)
 	}
@@ -102,7 +102,12 @@ func New(cfg config.Config) (Model, error) {
 		shellWarning:    cfg.ShellWarning,
 		sidebarVisible:  true,
 		sbarVisible:     true,
-		paneShowSidebar: map[layout.PaneID]bool{1: true},
+		paneShowSidebar: map[layout.PaneID]bool{},
+	}
+	// Mark every pane produced by layout.New as sidebar-visible so multi-pane
+	// boot layouts (via -sp) inherit the same default as the single-pane boot.
+	for _, id := range lay.AllPaneIDs() {
+		m.paneShowSidebar[id] = true
 	}
 	m.layout = m.layout.SetContentFocused(true)
 	return m, nil
