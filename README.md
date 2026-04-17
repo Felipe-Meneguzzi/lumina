@@ -1,10 +1,12 @@
 # Lumina
 
-> **"We have Hyprland at home"** — the Hyprland at home:
+> **"We have Hyprland at home"** — the Hyprland at home.
 
 Lumina is an open-source VSCode-inspired TUI (Terminal User Interface) editor built with Go and Bubble Tea. It runs entirely inside your terminal, combining a real interactive shell, a file explorer, a text editor, and a live system monitor — all in one keyboard-driven workspace.
 
 The goal is simple: give developers a productive, lightweight editing environment without ever leaving the terminal, inspired by the tiling and multi-window philosophy of compositors like Hyprland, but running anywhere a terminal runs.
+
+> **Built on [Speckkit](https://github.com/github/spec-kit)** — Lumina uses Speckkit as its spec-driven development foundation. Features are designed via structured specs (stored in `specs/`) that drive architecture decisions, contracts, and implementation tasks before any code is written.
 
 ---
 
