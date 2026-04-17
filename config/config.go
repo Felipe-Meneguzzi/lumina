@@ -113,7 +113,7 @@ func LoadConfig() (Config, error) {
 		// Surface a diagnostic when the configured shell was silently replaced.
 		if requested != "" && requested != cfg.Shell && isWindowsExecutable(requested) {
 			// Store the warning so app.go can display it in the status bar on startup.
-			cfg.ShellWarning = "WSL: shell '" + requested + "' é um binário Windows — usando " + cfg.Shell
+			cfg.ShellWarning = "WSL: shell '" + requested + "' is a Windows binary — using " + cfg.Shell
 		}
 		// Empty `editor` value is treated as absent (falls back to "nano").
 		// Non-empty values are preserved as-is — PATH resolution happens at spawn

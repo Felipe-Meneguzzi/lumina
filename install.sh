@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Lumina installer — baixa o binário mais recente do GitHub Releases e coloca
-# no PATH do usuário.
+# Lumina installer — downloads the latest binary from GitHub Releases and places
+# it in the user's PATH.
 #
-# Uso rápido (sem clonar o repo):
+# Quick install (no need to clone the repo):
 #   curl -fsSL https://raw.githubusercontent.com/Felipe-Meneguzzi/lumina/main/install.sh | bash
 #
-# Variáveis de ambiente reconhecidas:
-#   LUMINA_VERSION   — tag a instalar (ex: v0.3.1). Default: latest
-#   INSTALL_DIR      — diretório destino. Default: ~/.local/bin (fallback /usr/local/bin)
-#   LUMINA_REPO      — override do repo (owner/name). Default: Felipe-Meneguzzi/lumina
+# Recognised environment variables:
+#   LUMINA_VERSION   — tag to install (e.g. v0.3.1). Default: latest
+#   INSTALL_DIR      — destination directory. Default: ~/.local/bin (fallback /usr/local/bin)
+#   LUMINA_REPO      — repo override (owner/name). Default: Felipe-Meneguzzi/lumina
 
 set -euo pipefail
 
@@ -21,10 +21,10 @@ info() { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarn:\033[0m %s\n' "$*" >&2; }
 
 need() {
-  command -v "$1" >/dev/null 2>&1 || { err "comando '$1' não encontrado — instale antes de rodar o installer"; exit 1; }
+  command -v "$1" >/dev/null 2>&1 || { err "command '$1' not found — install it before running the installer"; exit 1; }
 }
 
-# ── 1. Dependências mínimas ──────────────────────────────────────────────────
+# ── 1. Minimum dependencies ──────────────────────────────────────────────────
 need uname
 if command -v curl >/dev/null 2>&1; then
   FETCH="curl -fsSL"
@@ -33,17 +33,17 @@ elif command -v wget >/dev/null 2>&1; then
   FETCH="wget -qO-"
   FETCH_OUT="wget -qO"
 else
-  err "nem curl nem wget estão instalados"
+  err "neither curl nor wget is installed"
   exit 1
 fi
 
-# ── 2. Detectar OS e arquitetura ─────────────────────────────────────────────
+# ── 2. Detect OS and architecture ────────────────────────────────────────────
 OS_RAW="$(uname -s)"
 case "$OS_RAW" in
   Linux)   OS="linux"  ;;
   Darwin)  OS="darwin" ;;
   *)
-    err "sistema não suportado: $OS_RAW (Lumina roda em Linux e macOS — no Windows use WSL)"
+    err "unsupported OS: $OS_RAW (Lumina runs on Linux and macOS — on Windows use WSL)"
     exit 1
     ;;
 esac
@@ -53,40 +53,40 @@ case "$ARCH_RAW" in
   x86_64|amd64)   ARCH="amd64" ;;
   aarch64|arm64)  ARCH="arm64" ;;
   *)
-    err "arquitetura não suportada: $ARCH_RAW"
+    err "unsupported architecture: $ARCH_RAW"
     exit 1
     ;;
 esac
 
-# ── 3. Resolver versão ───────────────────────────────────────────────────────
+# ── 3. Resolve version ───────────────────────────────────────────────────────
 if [[ "$VERSION" == "latest" ]]; then
-  info "consultando última release de $REPO"
-  # A API retorna um JSON; extraímos tag_name sem depender de jq.
+  info "fetching latest release from $REPO"
+  # The API returns JSON; extract tag_name without depending on jq.
   API_URL="https://api.github.com/repos/$REPO/releases/latest"
   TAG="$($FETCH "$API_URL" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
   if [[ -z "$TAG" ]]; then
-    err "não foi possível descobrir a última release de $REPO"
-    err "verifique se o repo tem releases publicados ou defina LUMINA_VERSION"
+    err "could not determine the latest release of $REPO"
+    err "check that the repo has published releases or set LUMINA_VERSION"
     exit 1
   fi
 else
   TAG="$VERSION"
 fi
-info "versão: $TAG"
+info "version: $TAG"
 
-# ── 3b. Já está instalado nessa versão? ──────────────────────────────────────
+# ── 3b. Already installed at this version? ───────────────────────────────────
 if command -v lumina >/dev/null 2>&1; then
   CURRENT="$(lumina --version 2>/dev/null || true)"
   if [[ -n "$CURRENT" && "$CURRENT" == "$TAG" ]]; then
-    info "lumina $TAG já está instalado em $(command -v lumina) — nada a fazer"
+    info "lumina $TAG is already installed at $(command -v lumina) — nothing to do"
     exit 0
   fi
   if [[ -n "$CURRENT" ]]; then
-    info "atualizando de $CURRENT para $TAG"
+    info "upgrading from $CURRENT to $TAG"
   fi
 fi
 
-# ── 4. Decidir diretório de instalação ───────────────────────────────────────
+# ── 4. Choose installation directory ─────────────────────────────────────────
 if [[ -z "$INSTALL_DIR" ]]; then
   if [[ -w "${HOME}/.local/bin" ]] || mkdir -p "${HOME}/.local/bin" 2>/dev/null; then
     INSTALL_DIR="${HOME}/.local/bin"
@@ -97,25 +97,25 @@ if [[ -z "$INSTALL_DIR" ]]; then
     mkdir -p "$INSTALL_DIR"
   fi
 fi
-info "destino: $INSTALL_DIR"
+info "destination: $INSTALL_DIR"
 
-# ── 5. Baixar binário para tmp e mover atomicamente ──────────────────────────
+# ── 5. Download binary to a tmp dir and move atomically ──────────────────────
 ASSET="lumina-${OS}-${ARCH}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-info "baixando $URL"
+info "downloading $URL"
 if ! $FETCH_OUT "$TMP_DIR/lumina" "$URL"; then
-  err "falha ao baixar $ASSET da release $TAG"
-  err "confira se o asset '$ASSET' existe em https://github.com/${REPO}/releases/tag/${TAG}"
+  err "failed to download $ASSET from release $TAG"
+  err "check that the asset '$ASSET' exists at https://github.com/${REPO}/releases/tag/${TAG}"
   exit 1
 fi
 
 chmod +x "$TMP_DIR/lumina"
 
-# ── 6. Checksum opcional (se a release publicar checksums.txt) ───────────────
+# ── 6. Optional checksum (if the release publishes checksums.txt) ─────────────
 CHECKSUM_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
 if command -v sha256sum >/dev/null 2>&1; then
   if $FETCH "$CHECKSUM_URL" >"$TMP_DIR/checksums.txt" 2>/dev/null; then
@@ -123,7 +123,7 @@ if command -v sha256sum >/dev/null 2>&1; then
     if [[ -n "$EXPECTED" ]]; then
       ACTUAL="$(sha256sum "$TMP_DIR/lumina" | awk '{print $1}')"
       if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-        err "checksum inválido: esperado $EXPECTED, obtido $ACTUAL"
+        err "invalid checksum: expected $EXPECTED, got $ACTUAL"
         exit 1
       fi
       info "checksum ok"
@@ -131,31 +131,31 @@ if command -v sha256sum >/dev/null 2>&1; then
   fi
 fi
 
-# ── 7. Instalar ──────────────────────────────────────────────────────────────
+# ── 7. Install ───────────────────────────────────────────────────────────────
 DEST="${INSTALL_DIR}/lumina"
 if [[ -w "$INSTALL_DIR" ]]; then
   mv -f "$TMP_DIR/lumina" "$DEST"
 else
-  warn "$INSTALL_DIR não é gravável; tentando com sudo"
+  warn "$INSTALL_DIR is not writable; trying with sudo"
   sudo mv -f "$TMP_DIR/lumina" "$DEST"
 fi
 
-info "instalado em $DEST"
+info "installed at $DEST"
 
-# ── 8. Checar PATH ───────────────────────────────────────────────────────────
+# ── 8. Check PATH ────────────────────────────────────────────────────────────
 case ":$PATH:" in
   *":$INSTALL_DIR:"*)
-    info "pronto — rode: lumina"
+    info "all done — run: lumina"
     ;;
   *)
-    warn "$INSTALL_DIR não está no PATH"
+    warn "$INSTALL_DIR is not in PATH"
     cat <<EOF
 
-Adicione isto ao seu shell rc (~/.bashrc, ~/.zshrc, ~/.profile):
+Add this to your shell rc (~/.bashrc, ~/.zshrc, ~/.profile):
 
     export PATH="$INSTALL_DIR:\$PATH"
 
-Depois recarregue: source ~/.bashrc (ou reabra o terminal)
+Then reload: source ~/.bashrc (or open a new terminal)
 EOF
     ;;
 esac

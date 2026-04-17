@@ -66,7 +66,7 @@ func defaultKeybindings() Keybindings {
 		OpenTerminalHere: []string{"ctrl+t"},
 		Save:             []string{"ctrl+s"},
 		Quit:             []string{"ctrl+c"},
-		Help:             []string{"?"},
+		Help:             []string{"alt+/", "?"},
 
 		// alt+| (alt+shift+\) is safe — Windows Terminal does not capture it.
 		// alt+_ (alt+shift+-) conflicts with Windows Terminal "split pane down" on WSL —
@@ -456,6 +456,9 @@ func (kb Keybindings) GlobalKeys() map[string]bool {
 		reserved[k] = true
 	}
 	for _, k := range kb.EnterCopyMode {
+		reserved[k] = true
+	}
+	for _, k := range kb.Help {
 		reserved[k] = true
 	}
 	for _, k := range kb.SidebarNewDir {

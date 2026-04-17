@@ -53,8 +53,8 @@ func TestParseArgs_MPFlag_Invalid(t *testing.T) {
 		args []string
 		want string // substring expected in error (case-insensitive)
 	}{
-		{"zero", []string{"-mp", "0"}, `-mp inválido`},
-		{"negative", []string{"-mp", "-1"}, `-mp inválido`},
+		{"zero", []string{"-mp", "0"}, `-mp invalid`},
+		{"negative", []string{"-mp", "-1"}, `-mp invalid`},
 		{"non-numeric", []string{"-mp", "abc"}, `invalid`}, // flag pkg rejects before our check
 	}
 	for _, tc := range cases {
@@ -115,8 +115,8 @@ func TestValidate_Conflict_MPBelowSP(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for -mp 2 + -sp h5")
 	}
-	if !strings.Contains(err.Error(), "excede") {
-		t.Errorf("expected error mentioning 'excede', got %q", err.Error())
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected error mentioning 'exceeds', got %q", err.Error())
 	}
 }
 
@@ -159,8 +159,8 @@ func TestParseArgs_Conflict_MP_SP(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for -mp 2 -sp h5")
 	}
-	if !strings.Contains(err.Error(), "excede") {
-		t.Errorf("expected 'excede' in error, got %q", err.Error())
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected 'exceeds' in error, got %q", err.Error())
 	}
 }
 
@@ -193,8 +193,8 @@ func TestParseArgs_SCFlag_Empty(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty -sc")
 	}
-	if !strings.Contains(err.Error(), "vazio") {
-		t.Errorf("expected 'vazio' in error, got %q", err.Error())
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("expected 'empty' in error, got %q", err.Error())
 	}
 }
 

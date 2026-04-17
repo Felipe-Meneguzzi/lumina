@@ -32,7 +32,7 @@ func newCreatePrompt(kind, parentDir string) *createPrompt {
 	ti.Focus()
 	ti.CharLimit = 255
 	if kind == "dir" {
-		ti.Placeholder = "nova-pasta"
+		ti.Placeholder = "new-folder"
 	} else {
 		ti.Placeholder = "arquivo.txt"
 	}
@@ -58,7 +58,7 @@ func (p *createPrompt) Update(msg tea.KeyMsg) (*createPrompt, tea.Cmd) {
 		}
 		path := filepath.Join(p.parentDir, name)
 		if _, err := os.Stat(path); err == nil {
-			p.err = "já existe"
+			p.err = "already exists"
 			return p, nil
 		}
 		if err := create(p.kind, path); err != nil {
@@ -80,9 +80,9 @@ func (p *createPrompt) Update(msg tea.KeyMsg) (*createPrompt, tea.Cmd) {
 
 // View renders the prompt line: label + input + optional error.
 func (p *createPrompt) View() string {
-	label := "Nova pasta: "
+	label := "New folder: "
 	if p.kind == "file" {
-		label = "Novo arquivo: "
+		label = "New file: "
 	}
 	out := promptLabelStyle.Render(label) + p.input.View()
 	if p.err != "" {
@@ -98,13 +98,13 @@ func (p *createPrompt) View() string {
 // not sensible names for a new entry and are rejected.
 func validateName(name string) string {
 	if name == "" {
-		return "nome vazio"
+		return "empty name"
 	}
 	if name == "." || name == ".." {
-		return "nome inválido"
+		return "invalid name"
 	}
 	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, 0) {
-		return "caracteres inválidos"
+		return "invalid characters"
 	}
 	return ""
 }

@@ -47,7 +47,7 @@ func (o StartupOverrides) EffectiveMaxPanes() int {
 func (o StartupOverrides) Validate() error {
 	if o.MaxPanes > 0 && o.StartPanes > o.MaxPanes {
 		return fmt.Errorf(
-			"lumina: -sp %s%d excede -mp %d: não é possível criar %d painéis iniciais com teto %d",
+			"lumina: -sp %s%d exceeds -mp %d: cannot create %d initial panes with a ceiling of %d",
 			orientLetter(o.StartOrient), o.StartPanes, o.MaxPanes, o.StartPanes, o.MaxPanes,
 		)
 	}
@@ -84,7 +84,7 @@ func ParseStartPanes(s string) (Orient, int, error) {
 
 func newSPError(got string) error {
 	return fmt.Errorf(
-		`lumina: -sp inválido: esperado h<N> ou v<N> com N >= 1, recebi %q`, got,
+		`lumina: -sp invalid: expected h<N> or v<N> with N >= 1, got %q`, got,
 	)
 }
 
@@ -120,7 +120,7 @@ func ParseArgs(args []string, errOut io.Writer) (StartupOverrides, error) {
 	if setFlags["mp"] {
 		if mp < 1 {
 			return out, fmt.Errorf(
-				`lumina: -mp inválido: esperado inteiro >= 1, recebi %q`, strconv.Itoa(mp),
+				`lumina: -mp invalid: expected integer >= 1, got %q`, strconv.Itoa(mp),
 			)
 		}
 		out.MaxPanes = mp
@@ -137,7 +137,7 @@ func ParseArgs(args []string, errOut io.Writer) (StartupOverrides, error) {
 
 	if setFlags["sc"] {
 		if sc == "" {
-			return out, fmt.Errorf("lumina: -sc inválido: comando não pode ser vazio")
+			return out, fmt.Errorf("lumina: -sc invalid: command cannot be empty")
 		}
 		out.StartCommand = strings.TrimSpace(sc)
 	}

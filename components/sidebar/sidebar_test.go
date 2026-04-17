@@ -71,7 +71,7 @@ func TestModel_ImplementsTeaModel(t *testing.T) {
 
 // TestBackspaceAtRoot_EmitsAlreadyAtRoot verifies FR-009 behaviour: pressing
 // Backspace when the sidebar is already at its configured root surfaces a
-// transient "Já na raiz" notification instead of moving up.
+// transient "Already at root" notification instead of moving up.
 func TestBackspaceAtRoot_EmitsAlreadyAtRoot(t *testing.T) {
 	m := newTestModel(t)
 	m.SetFocused(true)
@@ -86,7 +86,7 @@ func TestBackspaceAtRoot_EmitsAlreadyAtRoot(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected StatusBarNotifyMsg, got %T", msg)
 	}
-	if n.Text != "Já na raiz" {
+	if n.Text != "Already at root" {
 		t.Errorf("unexpected text: %q", n.Text)
 	}
 }

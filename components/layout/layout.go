@@ -418,7 +418,7 @@ func (m Model) handleSplit(msg msgs.PaneSplitMsg) (tea.Model, tea.Cmd) {
 // handleClose closes the focused pane.
 func (m Model) handleClose() (tea.Model, tea.Cmd) {
 	if m.PaneCount() <= 1 {
-		return m, notifyStatus("Não é possível fechar o único painel", msgs.NotifyWarning)
+		return m, notifyStatus("Cannot close the only pane", msgs.NotifyWarning)
 	}
 	return m.doCloseLeaf(m.focused)
 }

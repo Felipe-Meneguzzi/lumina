@@ -71,6 +71,53 @@ func TestToggleStatusBar_HideAndShow(t *testing.T) {
 	}
 }
 
+func TestHelpOverlay_ToggleAndClose(t *testing.T) {
+	m := newTestApp(t)
+
+	if m.ShowHelp() {
+		t.Fatal("help should be hidden on startup")
+	}
+
+	// Open with "?" (fallback binding).
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	nm := next.(app.Model)
+	if !nm.ShowHelp() {
+		t.Fatal("expected help visible after pressing '?'")
+	}
+
+	// Close with esc.
+	next2, _ := nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	nm2 := next2.(app.Model)
+	if nm2.ShowHelp() {
+		t.Error("expected help hidden after pressing esc")
+	}
+
+	// Open again and close with the help key itself.
+	next3, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	nm3 := next3.(app.Model)
+	next4, _ := nm3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	nm4 := next4.(app.Model)
+	if nm4.ShowHelp() {
+		t.Error("expected help hidden after pressing '?' again")
+	}
+}
+
+func TestHelpOverlay_SwallowsKeys(t *testing.T) {
+	m := newTestApp(t)
+	initialWidth := m.SidebarWidth()
+
+	// Open help.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	nm := next.(app.Model)
+
+	// A toggle-sidebar key while help is open must NOT change sidebar state.
+	next2, _ := nm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e"), Alt: true})
+	nm2 := next2.(app.Model)
+	if nm2.SidebarWidth() != initialWidth {
+		t.Error("sidebar state changed while help overlay was open")
+	}
+}
+
 func TestToggleSidebar_StatePerPane(t *testing.T) {
 	m := newTestApp(t)
 

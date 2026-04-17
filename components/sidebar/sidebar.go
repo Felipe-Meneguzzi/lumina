@@ -16,7 +16,7 @@ import (
 )
 
 // alreadyAtRootDuration controls how long the status bar keeps showing the
-// "Já na raiz" notification when the user hits Backspace at the configured
+// "Already at root" notification when the user hits Backspace at the configured
 // root (feature 006 / FR-009).
 const alreadyAtRootDuration = 2 * time.Second
 
@@ -209,7 +209,7 @@ func (m Model) navigateParent() (tea.Model, tea.Cmd) {
 	if atRoot {
 		return m, func() tea.Msg {
 			return msgs.StatusBarNotifyMsg{
-				Text:     "Já na raiz",
+				Text:     "Already at root",
 				Level:    msgs.NotifyInfo,
 				Duration: alreadyAtRootDuration,
 			}

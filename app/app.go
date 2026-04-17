@@ -134,8 +134,11 @@ func New(cfg config.Config, layoutOpts []layout.Option, appOpts ...Option) (Mode
 	}
 
 	// Mark every pane produced by layout.New with the current sidebar visibility.
+	// Also seed the initial pane context with cwd so the status bar shows folder
+	// and git info from the very first frame, before OSC 7 arrives from the shell.
 	for _, id := range lay.AllPaneIDs() {
 		m.paneShowSidebar[id] = m.sidebarVisible
+		m.paneCtx[id] = paneContext{cwd: cwd}
 	}
 	m.layout = m.layout.SetContentFocused(true)
 	return m, nil
@@ -159,12 +162,21 @@ func (m Model) Init() tea.Cmd {
 			Duration: 3 * time.Second,
 		}
 	}
-	return tea.Batch(
+	// Fire an immediate git query for every pane seeded in New so the status
+	// bar shows branch + dirty state from the first frame, not just after the
+	// shell emits its first OSC 7.
+	var initCmds []tea.Cmd
+	for id, ctx := range m.paneCtx {
+		initCmds = append(initCmds, queryGitState(int(id), ctx.cwd))
+	}
+	initCmds = append(initCmds,
 		m.layout.Init(),
 		m.sbar.Init(),
 		m.side.Init(),
 		startupNotify,
+		m.focusedContextCmd(),
 	)
+	return tea.Batch(initCmds...)
 }
 
 // Update is the central message router.
@@ -410,6 +422,14 @@ func abs(x int) int {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ── Help overlay — intercepts all keys while open ─────────────────────────
+	if m.showHelp {
+		if msg.String() == "esc" || m.keys.Action(msg.String()) == "help" {
+			m.showHelp = false
+		}
+		return m, nil
+	}
+
 	// ── Global shortcuts via config.Keybindings ───────────────────────────────
 	switch m.keys.Action(msg.String()) {
 	case "focus_sidebar":
@@ -484,10 +504,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case "help":
-		if m.focus != focusContent || m.layout.FocusedKind() != layout.KindTerminal {
-			m.showHelp = !m.showHelp
-			return m, nil
-		}
+		m.showHelp = true
+		return m, nil
 	}
 
 	// ── Terminal raw mode — forward input to PTY when content is focused ──────
@@ -634,6 +652,9 @@ func (m Model) SidebarWidth() int { return m.sidebarWidth }
 // SbarVisible returns whether the status bar is currently visible (exported for tests).
 func (m Model) SbarVisible() bool { return m.sbarVisible }
 
+// ShowHelp returns whether the help overlay is currently visible (exported for tests).
+func (m Model) ShowHelp() bool { return m.showHelp }
+
 // applySidebarState hides or shows the sidebar, preserving width for restoration.
 func (m Model) applySidebarState(visible bool) Model {
 	if visible {
@@ -689,7 +710,7 @@ func (m Model) openInExternalEditor(path string) (tea.Model, tea.Cmd) {
 	if _, err := exec.LookPath(editor); err != nil {
 		return m, func() tea.Msg {
 			return msgs.StatusBarNotifyMsg{
-				Text:     fmt.Sprintf("editor '%s' não encontrado no PATH", editor),
+				Text:     fmt.Sprintf("editor '%s' not found in PATH", editor),
 				Level:    msgs.NotifyError,
 				Duration: 5 * time.Second,
 			}
@@ -797,6 +818,10 @@ func queryGitState(paneID int, cwd string) tea.Cmd {
 
 // View renders the full TUI.
 func (m Model) View() string {
+	if m.showHelp {
+		return m.renderHelpOverlay()
+	}
+
 	layoutView := m.layout.View()
 	sideView := m.side.View()
 
@@ -807,17 +832,61 @@ func (m Model) View() string {
 		content = layoutView
 	}
 
-	var screen string
 	if m.sbarVisible {
-		screen = lipgloss.JoinVertical(lipgloss.Left, content, m.sbar.View())
-	} else {
-		screen = content
+		return lipgloss.JoinVertical(lipgloss.Left, content, m.sbar.View())
+	}
+	return content
+}
+
+var (
+	helpBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62")).
+			Padding(0, 2)
+	helpTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("212"))
+	helpSectionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("99"))
+	helpKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	helpDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	helpDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+)
+
+// renderHelpOverlay builds a centered help modal showing all configured keybindings.
+func (m Model) renderHelpOverlay() string {
+	sectionTitles := []string{
+		"Focus", "Pane Split", "Pane Navigation",
+		"Resize", "Visibility", "Sidebar", "General",
 	}
 
-	if m.showHelp {
-		helpView := m.help.View(m.keymap)
-		return screen + "\n" + helpView
+	var lines []string
+	lines = append(lines, helpTitleStyle.Render("Lumina — Keyboard Shortcuts"))
+	lines = append(lines, "")
+
+	for i, group := range m.keymap.FullHelp() {
+		title := ""
+		if i < len(sectionTitles) {
+			title = sectionTitles[i]
+		}
+		if title != "" {
+			lines = append(lines, helpSectionStyle.Render(title))
+		}
+		for _, b := range group {
+			h := b.Help()
+			if h.Key == "" {
+				continue
+			}
+			key := helpKeyStyle.Render(fmt.Sprintf("  %-28s", h.Key))
+			lines = append(lines, key+helpDescStyle.Render(h.Desc))
+		}
+		lines = append(lines, "")
 	}
 
-	return screen
+	closeKeys := strings.Join(m.keys.Help, " / ")
+	lines = append(lines, helpDimStyle.Render(fmt.Sprintf("Pressione %s ou esc para fechar", closeKeys)))
+
+	box := helpBorderStyle.Render(strings.Join(lines, "\n"))
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
