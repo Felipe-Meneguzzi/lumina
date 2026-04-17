@@ -169,6 +169,7 @@ Flags:
                     (applies only to panes created by -sp; later splits use the shell)
   -nsb              Hide sidebar on startup for all panes
   --version, -v     Print version and exit
+  --update          Check for updates and install if a newer release is available
   --help, -h        Show this help
 
 Examples:

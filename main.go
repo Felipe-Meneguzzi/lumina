@@ -25,6 +25,12 @@ func main() {
 		case "--help", "-h":
 			fmt.Print(cli.UsageText())
 			return
+		case "--update", "update":
+			if err := cli.SelfUpdate(version, os.Stdout, os.Stderr); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 

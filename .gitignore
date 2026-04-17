@@ -8,3 +8,7 @@ vendor/
 *.swp
 .vscode/
 .idea/
+specs/
+.specify/
+.claude/
+CLAUDE.md

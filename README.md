@@ -13,8 +13,17 @@ recente e instala em `~/.local/bin`. Depois é só rodar `lumina` — no Windows
 
 ### Atualizar
 
-Mesma linha. O script pergunta a última release, compara com `lumina --version` e só
-substitui o binário se estiver desatualizado:
+Se o Lumina já está instalado, o jeito mais simples é usar o próprio binário:
+
+```bash
+lumina --update
+```
+
+Consulta a última release do GitHub, compara com a versão instalada e, se houver
+atualização, baixa o binário e substitui o atual in-place. Nada a fazer se já estiver
+na versão mais recente.
+
+Alternativamente, a mesma linha do instalador também atualiza:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/menegas/lumina/main/install.sh | bash
@@ -103,13 +112,18 @@ o modelo mental de quem já usa Hyprland, i3 ou sway.
   para uniformizar shells que não têm configuração própria
 
 ### Editor
-- Buffer de texto nativo com `bubbles/viewport`
-- Salvamento via `ctrl+s`
-- Prompt de confirmação ao fechar pane com alterações não salvas
+- Abre arquivos no **editor externo** configurado (`nano` por padrão, configurável via campo `editor` no `config.toml`)
+- A sidebar inicia o editor externo ao abrir um arquivo; `ctrl+s` funciona dentro do editor externo normalmente
 
 ### Mouse
 - **Click-to-focus** em qualquer pane (sidebar, editor, terminal)
 - **Drag** na borda da sidebar para redimensionar
+- **Seleção de texto por mouse** (drag) no terminal — arrastar o mouse seleciona texto com
+  highlight visual; ao soltar o botão, o texto é copiado automaticamente para o clipboard
+  do host via OSC 52 se `mouse_auto_copy = true` (default). Com `mouse_auto_copy = false`
+  uma confirmação aparece na status bar.
+- `selection_mode` controla o estilo de seleção: `"linear"` (padrão, estilo bloco de notas)
+  ou `"block"` (retangular, estilo vim visual-block)
 - **Alt+wheel** para scrollback do terminal (hotkey preservada mesmo quando o app pede
   mouse tracking, servindo como escape hatch)
 - **Wheel sem Alt** passa direto para o app dentro do terminal quando ele está em modo
@@ -179,8 +193,13 @@ lumina path/to/file.txt
 
 ### CLI flags
 
-Lumina aceita três flags opcionais para customizar o boot da sessão (efêmeras — não
-alteram `config.toml`):
+| Flag | Descrição |
+|------|-----------|
+| `--update` | Verifica se há nova release no GitHub e instala se houver. |
+| `--version`, `-v` | Imprime a versão instalada e sai. |
+| `--help`, `-h` | Exibe a ajuda completa e sai. |
+
+Flags de sessão (efêmeras — não alteram `config.toml`):
 
 | Flag | Formato | Default | Descrição |
 |------|---------|---------|-----------|
@@ -235,6 +254,9 @@ show_hidden       = true         # Mostrar dotfiles na sidebar.
 sidebar_width     = 30           # Largura da sidebar em colunas.
 theme             = "default"    # Tema da UI.
 force_shell_theme = true         # Injeta o prompt customizado do Lumina no shell.
+mouse_auto_copy   = true         # Copia automaticamente ao soltar o botão do mouse na seleção.
+selection_mode    = "linear"     # Estilo de seleção: "linear" (padrão) ou "block" (retangular).
+editor            = "nano"       # Editor externo usado pela sidebar ("nano"|"vim"|"nvim"|caminho absoluto).
 ```
 
 No **WSL**, se `shell` apontar para um executável Windows (`.exe`), o Lumina rejeita
@@ -250,7 +272,10 @@ segue a do Bubble Tea: `"ctrl+s"`, `"alt+h"`, `"f1"`, `"?"`.
 {
   "toggle_sidebar":   ["alt+e"],
   "split_horizontal": ["alt+b", "alt+|"],
-  "enter_copy_mode":  ["alt+y"]
+  "enter_copy_mode":  ["alt+y"],
+  "sidebar_new_dir":  ["alt+d"],
+  "sidebar_new_file": ["alt+f"],
+  "sidebar_parent":   ["backspace"]
 }
 ```
 
@@ -318,6 +343,9 @@ Setas movem a borda mais próxima na direção da tecla, independente de foco.
 | Crescer sidebar | `alt+}` | +1 coluna |
 | Diminuir sidebar | `alt+{` | −1 coluna |
 | Toggle sidebar | `alt+e` | Mostra/oculta a sidebar do pane ativo |
+| Subir para diretório pai | `backspace` | Navega para o diretório pai (apenas com sidebar em foco) |
+| Novo diretório | `alt+d` | Cria novo diretório no local atual |
+| Novo arquivo | `alt+f` | Cria novo arquivo no local atual |
 
 ### Copy mode (terminal)
 
@@ -386,11 +414,11 @@ lumina/
 │   │   ├── terminal.go    # Model principal + ciclo de vida do PTY
 │   │   ├── scrollback.go  # Render composto (scrollback + live)
 │   │   ├── copymode.go    # Estado + render do copy mode + OSC 52
+│   │   ├── mouseselect.go # Seleção de texto por mouse com highlight + OSC 52
 │   │   ├── mouse.go       # Callbacks do emulador (DEC modes, title, CWD, bell)
 │   │   ├── keys.go        # Tradução de tea.KeyMsg → bytes do PTY
 │   │   └── theme.go       # Injeção opcional do prompt customizado
-│   ├── sidebar/           # File explorer (bubbles/list + os.ReadDir)
-│   ├── editor/            # Text buffer ([]string + bubbles/viewport)
+│   ├── sidebar/           # File explorer (bubbles/list + os.ReadDir) + criação de arquivos/dirs
 │   └── statusbar/         # Métricas (gopsutil ticker)
 ├── msgs/
 │   └── msgs.go            # TODOS os tea.Msg customizados
