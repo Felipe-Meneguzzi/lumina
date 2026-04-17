@@ -185,6 +185,35 @@ func closeLeafInner(n PaneNode, targetID PaneID) (PaneNode, *LeafNode) {
 	return n, nil
 }
 
+// adjustRatioAbsolute finds the nearest SplitNode containing targetID (matching axis)
+// and applies delta directly to its Ratio, always moving the boundary in the same
+// direction regardless of whether the target is First or Second.
+// Positive delta = boundary moves right/down (First grows); negative = left/up (First shrinks).
+func adjustRatioAbsolute(root PaneNode, targetID PaneID, delta float64, axis msgs.ResizeAxis) PaneNode {
+	adjustRatioAbsoluteInner(root, targetID, delta, axis)
+	return root
+}
+
+func adjustRatioAbsoluteInner(n PaneNode, targetID PaneID, delta float64, axis msgs.ResizeAxis) bool {
+	switch v := n.(type) {
+	case *LeafNode:
+		return v.ID == targetID
+	case *SplitNode:
+		firstHas := adjustRatioAbsoluteInner(v.First, targetID, delta, axis)
+		secondHas := adjustRatioAbsoluteInner(v.Second, targetID, delta, axis)
+		if firstHas || secondHas {
+			splitMatchesAxis :=
+				(v.Direction == msgs.SplitHorizontal && axis == msgs.ResizeAxisH) ||
+					(v.Direction == msgs.SplitVertical && axis == msgs.ResizeAxisV)
+			if splitMatchesAxis {
+				v.Ratio = clampRatio(v.Ratio + delta)
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // adjustRatio adjusts the Ratio of the SplitNode that is the parent of the leaf
 // with the given targetID and whose direction matches the requested axis.
 // delta is positive to grow First child (and shrink Second), negative to shrink First.

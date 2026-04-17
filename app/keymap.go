@@ -28,6 +28,10 @@ type KeyMap struct {
 	ShrinkPaneH     key.Binding
 	GrowPaneV       key.Binding
 	ShrinkPaneV     key.Binding
+	BoundaryRight   key.Binding
+	BoundaryLeft    key.Binding
+	BoundaryDown    key.Binding
+	BoundaryUp      key.Binding
 	GrowSidebar     key.Binding
 	ShrinkSidebar   key.Binding
 	ToggleSidebar   key.Binding
@@ -108,6 +112,22 @@ func NewKeyMap(kb config.Keybindings) KeyMap {
 		ShrinkPaneV: key.NewBinding(
 			key.WithKeys(kb.ShrinkPaneV...),
 			key.WithHelp(join(kb.ShrinkPaneV), "shrink pane ↑"),
+		),
+		BoundaryRight: key.NewBinding(
+			key.WithKeys(kb.BoundaryRight...),
+			key.WithHelp(join(kb.BoundaryRight), "boundary →"),
+		),
+		BoundaryLeft: key.NewBinding(
+			key.WithKeys(kb.BoundaryLeft...),
+			key.WithHelp(join(kb.BoundaryLeft), "boundary ←"),
+		),
+		BoundaryDown: key.NewBinding(
+			key.WithKeys(kb.BoundaryDown...),
+			key.WithHelp(join(kb.BoundaryDown), "boundary ↓"),
+		),
+		BoundaryUp: key.NewBinding(
+			key.WithKeys(kb.BoundaryUp...),
+			key.WithHelp(join(kb.BoundaryUp), "boundary ↑"),
 		),
 		GrowSidebar: key.NewBinding(
 			key.WithKeys(kb.GrowSidebar...),

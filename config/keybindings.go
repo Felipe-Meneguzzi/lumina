@@ -35,6 +35,12 @@ type Keybindings struct {
 	GrowPaneV   []string `json:"grow_pane_v"`
 	ShrinkPaneV []string `json:"shrink_pane_v"`
 
+	// Multiwindow: pane resize boundary-absolute (arrow keys — boundary always moves in key direction)
+	BoundaryRight []string `json:"boundary_right"`
+	BoundaryLeft  []string `json:"boundary_left"`
+	BoundaryDown  []string `json:"boundary_down"`
+	BoundaryUp    []string `json:"boundary_up"`
+
 	// Multiwindow: sidebar resize
 	GrowSidebar   []string `json:"grow_sidebar"`
 	ShrinkSidebar []string `json:"shrink_sidebar"`
@@ -66,13 +72,20 @@ func defaultKeybindings() Keybindings {
 		FocusPaneUp:    []string{"alt+k", "alt+up"},
 		FocusPaneDown:  []string{"alt+j", "alt+down"},
 
-		GrowPaneH:   []string{"alt+shift+l", "alt+shift+right"},
-		ShrinkPaneH: []string{"alt+shift+h", "alt+shift+left"},
-		GrowPaneV:   []string{"alt+shift+j", "alt+shift+down"},
-		ShrinkPaneV: []string{"alt+shift+k", "alt+shift+up"},
+		GrowPaneH:   []string{"alt+L"},
+		ShrinkPaneH: []string{"alt+H"},
+		GrowPaneV:   []string{"alt+J"},
+		ShrinkPaneV: []string{"alt+K"},
 
-		GrowSidebar:   []string{"alt+shift+]"},
-		ShrinkSidebar: []string{"alt+shift+["},
+		// Arrow keys move the split boundary in the key direction (boundary-absolute).
+		// Requires unbinding alt+shift+arrow in Windows Terminal settings on WSL.
+		BoundaryRight: []string{"alt+shift+right"},
+		BoundaryLeft:  []string{"alt+shift+left"},
+		BoundaryDown:  []string{"alt+shift+down"},
+		BoundaryUp:    []string{"alt+shift+up"},
+
+		GrowSidebar:   []string{"alt+}"},
+		ShrinkSidebar: []string{"alt+{"},
 
 		// alt+b conflicts with readline "backward-word" in some terminal emulators.
 		// alt+e (Explorer, like VSCode) passes through Windows Terminal safely.
@@ -94,6 +107,7 @@ func LoadKeybindings() (Keybindings, error) {
 	path := filepath.Join(home, ".config", "lumina", "keybindings.json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
+		_ = WriteDefaults(path) // best-effort: generate default file on first run
 		return kb, nil
 	}
 	if err != nil {
@@ -122,6 +136,10 @@ func LoadKeybindings() (Keybindings, error) {
 	if len(partial.ShrinkPaneH) > 0      { kb.ShrinkPaneH      = partial.ShrinkPaneH      }
 	if len(partial.GrowPaneV) > 0        { kb.GrowPaneV        = partial.GrowPaneV        }
 	if len(partial.ShrinkPaneV) > 0      { kb.ShrinkPaneV      = partial.ShrinkPaneV      }
+	if len(partial.BoundaryRight) > 0    { kb.BoundaryRight    = partial.BoundaryRight    }
+	if len(partial.BoundaryLeft) > 0     { kb.BoundaryLeft     = partial.BoundaryLeft     }
+	if len(partial.BoundaryDown) > 0     { kb.BoundaryDown     = partial.BoundaryDown     }
+	if len(partial.BoundaryUp) > 0       { kb.BoundaryUp       = partial.BoundaryUp       }
 	if len(partial.GrowSidebar) > 0      { kb.GrowSidebar      = partial.GrowSidebar      }
 	if len(partial.ShrinkSidebar) > 0    { kb.ShrinkSidebar    = partial.ShrinkSidebar    }
 	if len(partial.ToggleSidebar) > 0    { kb.ToggleSidebar    = partial.ToggleSidebar    }
@@ -150,6 +168,10 @@ func (kb Keybindings) Action(key string) string {
 	for _, k := range kb.ShrinkPaneH      { if k == key { return "shrink_pane_h"       } }
 	for _, k := range kb.GrowPaneV        { if k == key { return "grow_pane_v"         } }
 	for _, k := range kb.ShrinkPaneV      { if k == key { return "shrink_pane_v"       } }
+	for _, k := range kb.BoundaryRight    { if k == key { return "boundary_right"      } }
+	for _, k := range kb.BoundaryLeft     { if k == key { return "boundary_left"       } }
+	for _, k := range kb.BoundaryDown     { if k == key { return "boundary_down"       } }
+	for _, k := range kb.BoundaryUp       { if k == key { return "boundary_up"         } }
 	for _, k := range kb.GrowSidebar      { if k == key { return "grow_sidebar"        } }
 	for _, k := range kb.ShrinkSidebar    { if k == key { return "shrink_sidebar"      } }
 	for _, k := range kb.ToggleSidebar    { if k == key { return "toggle_sidebar"      } }
@@ -175,6 +197,10 @@ func (kb Keybindings) GlobalKeys() map[string]bool {
 	for _, k := range kb.ShrinkPaneH      { reserved[k] = true }
 	for _, k := range kb.GrowPaneV        { reserved[k] = true }
 	for _, k := range kb.ShrinkPaneV      { reserved[k] = true }
+	for _, k := range kb.BoundaryRight    { reserved[k] = true }
+	for _, k := range kb.BoundaryLeft     { reserved[k] = true }
+	for _, k := range kb.BoundaryDown     { reserved[k] = true }
+	for _, k := range kb.BoundaryUp       { reserved[k] = true }
 	for _, k := range kb.GrowSidebar      { reserved[k] = true }
 	for _, k := range kb.ShrinkSidebar    { reserved[k] = true }
 	for _, k := range kb.ToggleSidebar    { reserved[k] = true }

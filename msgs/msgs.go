@@ -94,9 +94,13 @@ type PaneFocusMoveMsg struct {
 }
 
 // PaneResizeMsg requests an incremental resize of the active pane.
+// When Boundary is false (default), the focused pane grows or shrinks (focus-relative).
+// When Boundary is true, the split boundary moves in the direction indicated by Direction
+// and Axis regardless of which pane is focused (boundary-absolute, for arrow keys).
 type PaneResizeMsg struct {
 	Direction ResizeDir
 	Axis      ResizeAxis
+	Boundary  bool
 }
 
 // LayoutResizeMsg propagates new content-area dimensions to the layout manager.

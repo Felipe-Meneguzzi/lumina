@@ -100,7 +100,7 @@ func New(cfg config.Config) (Model, error) {
 		shellWarning:    cfg.ShellWarning,
 		sidebarVisible:  true,
 		sbarVisible:     true,
-		paneShowSidebar: make(map[layout.PaneID]bool),
+		paneShowSidebar: map[layout.PaneID]bool{1: true},
 	}
 	m.layout = m.layout.SetContentFocused(true)
 	return m, nil
@@ -155,7 +155,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Route to layout and then restore sidebar state for the new focused pane.
 		return m.focusPaneThen(msg.Direction)
 
-	case msgs.PaneSplitMsg, msgs.PaneCloseMsg,
+	case msgs.PaneSplitMsg:
+		return m.handleSplit(msg.Direction)
+
+	case msgs.PaneCloseMsg,
 		msgs.PaneResizeMsg, msgs.LayoutResizeMsg,
 		msgs.PtyOutputMsg, msgs.PtyInputMsg,
 		msgs.OpenFileMsg:
@@ -289,9 +292,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.applyFocusOwner(focusContent), nil
 
 	case "split_horizontal":
-		return m.updateLayout(msgs.PaneSplitMsg{Direction: msgs.SplitHorizontal})
+		return m.handleSplit(msgs.SplitHorizontal)
 	case "split_vertical":
-		return m.updateLayout(msgs.PaneSplitMsg{Direction: msgs.SplitVertical})
+		return m.handleSplit(msgs.SplitVertical)
 	case "close_pane":
 		closedID := m.layout.FocusedID()
 		next, cmd := m.updateLayout(msgs.PaneCloseMsg{})
@@ -316,6 +319,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeGrow, Axis: msgs.ResizeAxisV})
 	case "shrink_pane_v":
 		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeShrink, Axis: msgs.ResizeAxisV})
+
+	case "boundary_right":
+		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeGrow, Axis: msgs.ResizeAxisH, Boundary: true})
+	case "boundary_left":
+		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeShrink, Axis: msgs.ResizeAxisH, Boundary: true})
+	case "boundary_down":
+		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeGrow, Axis: msgs.ResizeAxisV, Boundary: true})
+	case "boundary_up":
+		return m.updateLayout(msgs.PaneResizeMsg{Direction: msgs.ResizeShrink, Axis: msgs.ResizeAxisV, Boundary: true})
 
 	case "grow_sidebar":
 		return m.resizeSidebar(sidebarStep)
@@ -420,6 +432,16 @@ func (m Model) resizeSidebarTo(newW int) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// handleSplit creates a new pane in the given direction and records the current
+// sidebar visibility state for the new pane so toggleSidebar works correctly.
+func (m Model) handleSplit(dir msgs.SplitDir) (tea.Model, tea.Cmd) {
+	next, cmd := m.updateLayout(msgs.PaneSplitMsg{Direction: dir})
+	nm := next.(Model)
+	newID := nm.layout.FocusedID()
+	nm.paneShowSidebar[newID] = nm.sidebarVisible
+	return nm, cmd
+}
+
 // focusPaneThen moves pane focus then restores the focused pane's sidebar state.
 func (m Model) focusPaneThen(dir msgs.FocusDir) (tea.Model, tea.Cmd) {
 	next, cmd := m.updateLayout(msgs.PaneFocusMoveMsg{Direction: dir})
@@ -484,7 +506,7 @@ func (m Model) applySidebarForFocusedPane() Model {
 	id := m.layout.FocusedID()
 	visible, exists := m.paneShowSidebar[id]
 	if !exists {
-		visible = true // default: sidebar visible
+		visible = false // default: sidebar hidden
 	}
 	return m.applySidebarState(visible)
 }
@@ -495,7 +517,7 @@ func (m Model) toggleSidebar() Model {
 	// Determine current state; absent entry = visible.
 	wasVisible, exists := m.paneShowSidebar[id]
 	if !exists {
-		wasVisible = true
+		wasVisible = false
 	}
 	nowVisible := !wasVisible
 	m.paneShowSidebar[id] = nowVisible

@@ -389,7 +389,11 @@ func (m Model) handlePaneResize(msg msgs.PaneResizeMsg) (tea.Model, tea.Cmd) {
 	if msg.Direction == msgs.ResizeShrink {
 		delta = -ratioStep
 	}
-	m.root = adjustRatio(m.root, m.focused, delta, msg.Axis)
+	if msg.Boundary {
+		m.root = adjustRatioAbsolute(m.root, m.focused, delta, msg.Axis)
+	} else {
+		m.root = adjustRatio(m.root, m.focused, delta, msg.Axis)
+	}
 	return m, m.propagateResize()
 }
 
