@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,6 +71,18 @@ func defaults() Config {
 	}
 }
 
+// writeDefaults creates ~/.config/lumina/config.toml with default values.
+func writeDefaults(path string, cfg Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
 // LoadConfig reads ~/.config/lumina/config.toml and keybindings.json,
 // falling back to built-in defaults for any missing values.
 func LoadConfig() (Config, error) {
@@ -83,7 +96,9 @@ func LoadConfig() (Config, error) {
 	}
 
 	path := filepath.Join(home, ".config", "lumina", "config.toml")
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+		_ = writeDefaults(path, cfg)
+	} else if statErr == nil {
 		if _, err := toml.DecodeFile(path, &cfg); err != nil {
 			return cfg, err
 		}
